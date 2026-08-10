@@ -280,9 +280,21 @@ final class IntegrationsWindowController: NSWindowController {
             fallbackImage: symbol(symbolName, pointSize: 17, weight: .medium)
         )
         harnessIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        // The official Codex artwork occupies about 80% of its PNG canvas, while
+        // Claude's fills its canvas. Size the source canvases so both visible marks
+        // land at the same 28-point optical footprint without shifting the labels.
+        let iconSlot = NSView()
+        iconSlot.translatesAutoresizingMaskIntoConstraints = false
+        let sourceCanvasSize: CGFloat = harness == .codex ? 35 : 28
+        iconSlot.addSubview(harnessIcon)
         NSLayoutConstraint.activate([
-            harnessIcon.widthAnchor.constraint(equalToConstant: 28),
-            harnessIcon.heightAnchor.constraint(equalToConstant: 28),
+            iconSlot.widthAnchor.constraint(equalToConstant: 28),
+            iconSlot.heightAnchor.constraint(equalToConstant: 35),
+            harnessIcon.centerXAnchor.constraint(equalTo: iconSlot.centerXAnchor),
+            harnessIcon.centerYAnchor.constraint(equalTo: iconSlot.centerYAnchor),
+            harnessIcon.widthAnchor.constraint(equalToConstant: sourceCanvasSize),
+            harnessIcon.heightAnchor.constraint(equalToConstant: sourceCanvasSize),
         ])
 
         let name = NSTextField(labelWithString: harness.displayName)
@@ -324,7 +336,7 @@ final class IntegrationsWindowController: NSWindowController {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [harnessIcon, labels, spacer, spinner, stateStack, actionButton])
+        let row = NSStackView(views: [iconSlot, labels, spacer, spinner, stateStack, actionButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 13
