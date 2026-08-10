@@ -65,6 +65,56 @@ private final class AdaptiveIdentityImageView: NSImageView {
     }
 }
 
+private final class HarnessLogoImageView: NSImageView {
+    private let harness: HarnessKind
+    private let fallbackImage: NSImage?
+
+    init(harness: HarnessKind, fallbackImage: NSImage?) {
+        self.harness = harness
+        self.fallbackImage = fallbackImage
+        super.init(frame: .zero)
+        imageScaling = .scaleProportionallyUpOrDown
+        setAccessibilityLabel("\(harness.displayName) logo")
+        updateImage()
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateImage()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateImage()
+    }
+
+    private func updateImage() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let resourceName: String
+        switch harness {
+        case .codex:
+            resourceName = isDark ? "CodexDark" : "CodexLight"
+        case .claudeCode:
+            resourceName = "ClaudeCode"
+        }
+
+        guard let url = Bundle.main.url(
+            forResource: resourceName,
+            withExtension: "png",
+            subdirectory: "Integrations"
+        ), let brandedImage = NSImage(contentsOf: url) else {
+            image = fallbackImage
+            contentTintColor = .labelColor
+            return
+        }
+
+        image = brandedImage
+        contentTintColor = nil
+    }
+}
+
 private struct IntegrationRowPresentation {
     let detailLabel: NSTextField
     let actionButton: NSButton
@@ -222,12 +272,13 @@ final class IntegrationsWindowController: NSWindowController {
         card.translatesAutoresizingMaskIntoConstraints = false
         card.heightAnchor.constraint(equalToConstant: 76).isActive = true
 
-        let harnessIcon = NSImageView()
         let symbolName = harness == .codex
             ? "chevron.left.forwardslash.chevron.right"
             : "terminal.fill"
-        harnessIcon.image = symbol(symbolName, pointSize: 17, weight: .medium)
-        harnessIcon.contentTintColor = .labelColor
+        let harnessIcon = HarnessLogoImageView(
+            harness: harness,
+            fallbackImage: symbol(symbolName, pointSize: 17, weight: .medium)
+        )
         harnessIcon.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             harnessIcon.widthAnchor.constraint(equalToConstant: 28),
