@@ -21,7 +21,11 @@ Messages Bridge cannot edit or delete messages, execute arbitrary SQL, or read a
 
 ## Install and connect
 
-Public release downloads will be added to this repository's Releases page. Until then, build the app from source:
+1. Download the latest `Messages-Bridge-*.dmg` from [GitHub Releases](https://github.com/vishaldubey01/messages-bridge/releases/latest).
+2. Open the DMG and drag **Messages Bridge** to **Applications**.
+3. Open **Messages Bridge** from Applications.
+
+To build the app from source instead:
 
 ```bash
 git clone https://github.com/vishaldubey01/messages-bridge.git
@@ -90,15 +94,16 @@ MESSAGES_BRIDGE_BUNDLE_ID="com.example.MessagesBridge" \
 
 Changing the signing identity or bundle identifier can cause macOS to request privacy permissions again.
 
-To create a zipped release candidate:
+To create a signed, notarized, and stapled DMG:
 
 ```bash
 MESSAGES_BRIDGE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 MESSAGES_BRIDGE_BUNDLE_ID="com.example.MessagesBridge" \
+MESSAGES_BRIDGE_NOTARY_PROFILE="messages-bridge-notary" \
 ./scripts/package_release.sh
 ```
 
-Public binaries should be Developer ID signed and notarized before distribution. See [Distribution](docs/DISTRIBUTION.md).
+The release script verifies the app with Gatekeeper, creates a DMG with an Applications shortcut, notarizes the DMG, staples its ticket, and emits a SHA-256 checksum. See [Distribution](docs/DISTRIBUTION.md).
 
 ## Generic MCP configuration
 

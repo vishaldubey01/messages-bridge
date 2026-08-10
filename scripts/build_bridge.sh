@@ -56,16 +56,20 @@ if [[ "$signing_identity" != "-" ]] && ! security find-identity -v -p codesignin
   echo "Messages Bridge signing identity is unavailable: $signing_identity" >&2
   exit 1
 fi
+timestamp_arguments=(--timestamp=none)
+if [[ "$signing_identity" == "Developer ID Application:"* ]]; then
+  timestamp_arguments=(--timestamp)
+fi
 codesign \
   --force \
   --options runtime \
-  --timestamp=none \
+  "${timestamp_arguments[@]}" \
   --sign "$signing_identity" \
   "$contents_path/MacOS/MessagesBridgeMCP"
 codesign \
   --force \
   --options runtime \
-  --timestamp=none \
+  "${timestamp_arguments[@]}" \
   --entitlements "$entitlements_file" \
   --sign "$signing_identity" \
   --identifier "$bundle_identifier" \
