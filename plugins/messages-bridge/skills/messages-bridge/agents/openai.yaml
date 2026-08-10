@@ -1,0 +1,4 @@
+interface:
+  display_name: "Messages Bridge"
+  short_description: "Read iMessage chats, groups, and attachments"
+  default_prompt: "Use $messages-bridge to read a direct or group iMessage conversation and any relevant attachments."

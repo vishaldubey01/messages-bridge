@@ -1,0 +1,20 @@
+{
+  "name": "messages-bridge",
+  "interface": {
+    "displayName": "Messages Bridge"
+  },
+  "plugins": [
+    {
+      "name": "messages-bridge",
+      "source": {
+        "source": "local",
+        "path": "./plugins/messages-bridge"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

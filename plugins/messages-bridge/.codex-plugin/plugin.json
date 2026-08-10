@@ -1,0 +1,23 @@
+{
+  "name": "messages-bridge",
+  "version": "0.1.0",
+  "description": "Teach Codex to use the separately installed Messages Bridge app and its bounded local MCP tools.",
+  "author": {
+    "name": "Vishal Dubey"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Messages Bridge",
+    "shortDescription": "Use Messages Bridge in Codex.",
+    "longDescription": "Messages Bridge connects Codex to a separately permissioned macOS menu-bar app. It provides persistent read access to direct and group conversations plus bounded attachments, and text sending governed by an Off, Confirm Each Send, or Allow Sends Automatically policy. Editing, deletion, arbitrary SQL, and arbitrary file access remain unavailable.",
+    "developerName": "Vishal Dubey",
+    "category": "Productivity",
+    "capabilities": [
+      "Read Apple Messages conversations",
+      "List and read Apple Messages group chats",
+      "Read bounded message attachments",
+      "Send policy-controlled direct and group text messages"
+    ],
+    "defaultPrompt": "Read or send a direct or group Apple Messages conversation through Messages Bridge. Keep reads narrow, send only when explicitly requested, and do not access the database directly."
+  }
+}
