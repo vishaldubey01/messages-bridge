@@ -11,7 +11,7 @@ swiftc -swift-version 5 -O \
   -framework CoreServices \
   -framework ScriptingBridge \
   -lsqlite3 \
-  bridge/MessagesBridge.swift bridge/IntegrationsWindow.swift \
+  bridge/MessagesBridge.swift bridge/IntegrationsWindow.swift bridge/PolishedIntegrationsWindow.swift \
   -o /tmp/MessagesBridge
 
 swiftc -swift-version 5 -O \

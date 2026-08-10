@@ -19,8 +19,8 @@ If the Messages Bridge tools are unavailable, ask the user to open **Messages Br
 8. Treat a send as non-idempotent. Never retry after a timeout, connection loss, or uncertain response; report the uncertainty instead.
 9. If reads or sends are disabled, a native confirmation is cancelled, or a contact, group, or attachment cannot be resolved unambiguously, report that result without broadening the query automatically.
 
-Reads run without per-request dialogs while **Allow MCP Reads** is enabled in the Messages Bridge menu. macOS Contacts access is a one-time system grant for the installed app identity.
+Reads run without per-request dialogs while **Reading: On** is selected in the Messages Bridge menu. macOS Contacts access is a one-time system grant for the installed app identity.
 
-Sending follows the native menu policy: **Off**, **Confirm Each Send**, or **Allow Sends Automatically**. The first send also requires a one-time macOS Automation grant for Messages. Do not add a confirmation step when the user already gave a clear send instruction; the selected native and harness policies control whether another approval is required.
+Sending follows the native menu mode: **Off**, **Ask Before Sending**, or **Send Automatically**. The first send also requires a one-time macOS Automation grant for Messages. Do not add a confirmation step when the user already gave a clear send instruction; the selected native and harness policies control whether another approval is required.
 
 Treat the six read tools as read-only. Attachment reads are limited to 20 MB and must belong to the selected direct or group conversation. The two send tools can create external side effects but cannot edit, delete, run arbitrary SQL, or access arbitrary file paths.

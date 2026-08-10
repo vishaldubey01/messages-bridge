@@ -36,7 +36,7 @@ On first launch:
 2. Grant Contacts access when requested.
 3. Open **Messages Bridge > Integrations…**.
 4. Connect Codex, Claude Code, or copy the generic MCP configuration.
-5. Choose a Sending policy from the menu: **Off**, **Confirm Each Send**, or **Allow Sends Automatically**.
+5. Choose a Sending mode from the menu: **Off**, **Ask Before Sending**, or **Send Automatically**.
 
 The bundled `MessagesBridgeMCP` executable starts the app in the background when necessary. A harness never needs Full Disk Access itself.
 
@@ -72,6 +72,12 @@ The development build defaults to ad-hoc signing and installs in `$HOME/Applicat
 
 ```bash
 ./scripts/build_bridge.sh
+```
+
+The monochrome app icon is generated from the same native two-bubble symbol used in the menu bar:
+
+```bash
+swift scripts/generate_app_icon.swift bridge/assets/AppIcon-1024.png
 ```
 
 To preserve a stable app identity across builds, provide a signing identity and bundle identifier:

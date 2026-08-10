@@ -4,6 +4,7 @@ set -euo pipefail
 plugin_root="${0:A:h:h}"
 source_file="$plugin_root/bridge/MessagesBridge.swift"
 integrations_file="$plugin_root/bridge/IntegrationsWindow.swift"
+integrations_presentation_file="$plugin_root/bridge/PolishedIntegrationsWindow.swift"
 mcp_source_file="$plugin_root/bridge/MessagesBridgeMCP.swift"
 plist_file="$plugin_root/bridge/Info.plist"
 entitlements_file="$plugin_root/bridge/MessagesBridge.entitlements"
@@ -38,7 +39,7 @@ swiftc \
   -framework CoreServices \
   -framework ScriptingBridge \
   -lsqlite3 \
-  "$source_file" "$integrations_file" \
+  "$source_file" "$integrations_file" "$integrations_presentation_file" \
   -o "$contents_path/MacOS/MessagesBridge"
 swiftc \
   -swift-version 5 \

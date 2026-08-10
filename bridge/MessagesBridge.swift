@@ -1225,7 +1225,7 @@ private final class SocketServer {
     }
 }
 
-private final class AppDelegate: NSObject, NSApplicationDelegate {
+private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let readsEnabledKey = "persistentReadsEnabled"
     private let sendingPolicyKey = "sendingPolicy"
     private let integrationsShownKey = "integrationsWindowShownV1"
@@ -1234,7 +1234,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var server: SocketServer?
     private var statusItem: NSStatusItem?
     private var integrationsWindow: IntegrationsWindowController?
-    private var readAccessItem: NSMenuItem?
+    private var statusMenuItem: NSMenuItem?
+    private var readingMenuItem: NSMenuItem?
+    private var readingOnItem: NSMenuItem?
+    private var readingOffItem: NSMenuItem?
+    private var sendingMenuItem: NSMenuItem?
     private var sendingOffItem: NSMenuItem?
     private var sendingConfirmItem: NSMenuItem?
     private var sendingAutomaticItem: NSMenuItem?
@@ -1287,39 +1291,54 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             item.button?.title = "↔"
         }
-        item.button?.toolTip = "Messages Bridge — controlled read and send"
+        item.button?.toolTip = "Messages Bridge"
         let menu = NSMenu()
-        let heading = NSMenuItem(title: "Messages Bridge — local access policy", action: nil, keyEquivalent: "")
+        menu.delegate = self
+        let heading = NSMenuItem(title: "Messages Bridge", action: nil, keyEquivalent: "")
         heading.isEnabled = false
         menu.addItem(heading)
-        let access = NSMenuItem(title: "Allow MCP Reads", action: #selector(toggleReadAccess), keyEquivalent: "")
-        access.target = self
-        access.state = readsEnabled ? .on : .off
-        menu.addItem(access)
-        readAccessItem = access
+        let status = NSMenuItem(title: "Ready", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+        statusMenuItem = status
+        menu.addItem(.separator())
+
+        let reading = NSMenuItem(title: "Reading", action: nil, keyEquivalent: "")
+        let readingMenu = NSMenu()
+        let readingOn = NSMenuItem(title: "On", action: #selector(setReadingOn), keyEquivalent: "")
+        readingOn.target = self
+        readingMenu.addItem(readingOn)
+        readingOnItem = readingOn
+        let readingOff = NSMenuItem(title: "Off", action: #selector(setReadingOff), keyEquivalent: "")
+        readingOff.target = self
+        readingMenu.addItem(readingOff)
+        readingOffItem = readingOff
+        menu.setSubmenu(readingMenu, for: reading)
+        menu.addItem(reading)
+        readingMenuItem = reading
+
         let sending = NSMenuItem(title: "Sending", action: nil, keyEquivalent: "")
         let sendingMenu = NSMenu()
         let off = NSMenuItem(title: "Off", action: #selector(setSendingOff), keyEquivalent: "")
         off.target = self
         sendingMenu.addItem(off)
         sendingOffItem = off
-        let confirm = NSMenuItem(title: "Confirm Each Send", action: #selector(setSendingConfirmEach), keyEquivalent: "")
+        let confirm = NSMenuItem(title: "Ask Before Sending", action: #selector(setSendingConfirmEach), keyEquivalent: "")
         confirm.target = self
         sendingMenu.addItem(confirm)
         sendingConfirmItem = confirm
-        let automatic = NSMenuItem(title: "Allow Sends Automatically", action: #selector(setSendingAutomatic), keyEquivalent: "")
+        let automatic = NSMenuItem(title: "Send Automatically", action: #selector(setSendingAutomatic), keyEquivalent: "")
         automatic.target = self
         sendingMenu.addItem(automatic)
         sendingAutomaticItem = automatic
         menu.setSubmenu(sendingMenu, for: sending)
         menu.addItem(sending)
-        refreshSendingMenu()
-        let check = NSMenuItem(title: "Check Messages Access…", action: #selector(checkAccess), keyEquivalent: "")
+        sendingMenuItem = sending
+
+        menu.addItem(.separator())
+        let check = NSMenuItem(title: "Check Permissions…", action: #selector(checkPermissions), keyEquivalent: "")
         check.target = self
         menu.addItem(check)
-        let checkSending = NSMenuItem(title: "Check Sending Access…", action: #selector(checkSendingAccess), keyEquivalent: "")
-        checkSending.target = self
-        menu.addItem(checkSending)
         let integrations = NSMenuItem(title: "Integrations…", action: #selector(showIntegrations), keyEquivalent: ",")
         integrations.target = self
         menu.addItem(integrations)
@@ -1329,11 +1348,35 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
         item.menu = menu
         statusItem = item
+        refreshReadingMenu()
+        refreshSendingMenu()
+        refreshMenuStatus()
     }
 
-    @objc private func toggleReadAccess() {
-        UserDefaults.standard.set(!readsEnabled, forKey: readsEnabledKey)
-        readAccessItem?.state = readsEnabled ? .on : .off
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshReadingMenu()
+        refreshSendingMenu()
+        refreshMenuStatus()
+    }
+
+    @objc private func setReadingOn() {
+        setReadingEnabled(true)
+    }
+
+    @objc private func setReadingOff() {
+        setReadingEnabled(false)
+    }
+
+    private func setReadingEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: readsEnabledKey)
+        refreshReadingMenu()
+        refreshMenuStatus()
+    }
+
+    private func refreshReadingMenu() {
+        readingOnItem?.state = readsEnabled ? .on : .off
+        readingOffItem?.state = readsEnabled ? .off : .on
+        readingMenuItem?.title = "Reading: \(readsEnabled ? "On" : "Off")"
     }
 
     @objc private func setSendingOff() {
@@ -1347,9 +1390,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setSendingAutomatic() {
         guard sendingPolicy != .automatic else { return }
         let alert = NSAlert()
-        alert.messageText = "Allow automatic message sending?"
-        alert.informativeText = "Any connected MCP client can send messages through the two Messages Bridge send tools without another Messages Bridge confirmation. You can turn sending off from this menu at any time."
-        alert.addButton(withTitle: "Allow Automatically")
+        alert.messageText = "Send without asking each time?"
+        alert.informativeText = "Connected AI tools will be able to send messages without another Messages Bridge confirmation. You can change this at any time."
+        alert.addButton(withTitle: "Send Automatically")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -1359,6 +1402,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setSendingPolicy(_ policy: SendingPolicy) {
         UserDefaults.standard.set(policy.rawValue, forKey: sendingPolicyKey)
         refreshSendingMenu()
+        refreshMenuStatus()
     }
 
     private func refreshSendingMenu() {
@@ -1366,27 +1410,47 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         sendingOffItem?.state = policy == .off ? .on : .off
         sendingConfirmItem?.state = policy == .confirmEach ? .on : .off
         sendingAutomaticItem?.state = policy == .automatic ? .on : .off
+        let summary: String
+        switch policy {
+        case .off: summary = "Off"
+        case .confirmEach: summary = "Ask"
+        case .automatic: summary = "Automatic"
+        }
+        sendingMenuItem?.title = "Sending: \(summary)"
     }
 
-    @objc private func checkAccess() {
+    private func refreshMenuStatus() {
         let result = store.status()
         let readable = result["databaseReadable"] as? Bool == true
-        showAlert(
-            title: readable ? "Messages access is ready" : "Messages access is blocked",
-            message: readable
-                ? "Persistent reads are \(readsEnabled ? "enabled" : "disabled"). The database opened successfully in SQLite read-only mode. Attachments are bounded to 20 MB. No message content was read."
-                : (result["message"] as? String ?? "Messages Bridge cannot read the database.")
-        )
+        let contactsReady = result["contactsAuthorization"] as? String == "authorized"
+        let sendingReady = sendingPolicy == .off || sender.authorizationLabel() == "authorized"
+        let ready = readable && contactsReady && sendingReady
+        statusMenuItem?.title = ready ? "Ready" : "Needs attention"
+        let symbolName = ready ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+        statusMenuItem?.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
     }
 
-    @objc private func checkSendingAccess() {
-        let status = sender.authorizationStatus(prompt: true)
-        let ready = status == noErr
+    @objc private func checkPermissions() {
+        let result = store.status()
+        let readable = result["databaseReadable"] as? Bool == true
+        let contactsAuthorization = result["contactsAuthorization"] as? String ?? "unknown"
+        let automationAuthorization = sender.authorizationLabel()
+        let contactsReady = contactsAuthorization == "authorized"
+        let sendingReady = automationAuthorization == "authorized"
+        let overallReady = readable && contactsReady && (sendingPolicy == .off || sendingReady)
+
+        let messagesLine = "Messages: \(readable ? "Ready" : "Needs Full Disk Access")"
+        let contactsLine = "Contacts: \(contactsReady ? "Ready" : "Needs access")"
+        let sendingLine: String
+        switch automationAuthorization {
+        case "authorized": sendingLine = "Sending: Ready"
+        case "notDetermined": sendingLine = "Sending: Will ask the first time you send"
+        case "denied": sendingLine = "Sending: Blocked in System Settings"
+        default: sendingLine = "Sending: Status unavailable"
+        }
         showAlert(
-            title: ready ? "Sending access is ready" : "Sending access is blocked",
-            message: ready
-                ? "Messages Bridge is allowed to control Messages. Current sending policy: \(sendingPolicy.label)."
-                : "Enable Messages Bridge under System Settings > Privacy & Security > Automation > Messages. Error: \(status)."
+            title: overallReady ? "Messages Bridge is ready" : "Some permissions need attention",
+            message: [messagesLine, contactsLine, sendingLine].joined(separator: "\n")
         )
     }
 
@@ -1413,7 +1477,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return result
         case "read_thread":
             guard readsEnabled else {
-                return ["ok": false, "error": "reads_disabled", "message": "Enable Allow MCP Reads from the Messages Bridge menu."]
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
             }
             guard let rawName = request.name?.trimmingCharacters(in: .whitespacesAndNewlines), !rawName.isEmpty else {
                 return ["ok": false, "error": "invalid_name", "message": "A contact name is required."]
@@ -1433,7 +1497,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "list_groups":
             guard readsEnabled else {
-                return ["ok": false, "error": "reads_disabled", "message": "Enable Allow MCP Reads from the Messages Bridge menu."]
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
             }
             let days = min(max(request.sinceDays ?? 30, 1), 3650)
             let limit = min(max(request.limit ?? 50, 1), 100)
@@ -1446,7 +1510,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "read_group":
             guard readsEnabled else {
-                return ["ok": false, "error": "reads_disabled", "message": "Enable Allow MCP Reads from the Messages Bridge menu."]
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
             }
             guard let groupID = request.groupID?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !groupID.isEmpty,
@@ -1465,7 +1529,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "read_attachment":
             guard readsEnabled else {
-                return ["ok": false, "error": "reads_disabled", "message": "Enable Allow MCP Reads from the Messages Bridge menu."]
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
             }
             guard let rawName = request.name?.trimmingCharacters(in: .whitespacesAndNewlines), !rawName.isEmpty,
                   rawName.count <= 200,
@@ -1487,7 +1551,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "read_group_attachment":
             guard readsEnabled else {
-                return ["ok": false, "error": "reads_disabled", "message": "Enable Allow MCP Reads from the Messages Bridge menu."]
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
             }
             guard let groupID = request.groupID?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !groupID.isEmpty,
@@ -1513,7 +1577,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 return [
                     "ok": false,
                     "error": "sending_disabled",
-                    "message": "Enable Confirm Each Send or Allow Sends Automatically from the Messages Bridge menu."
+                    "message": "Set Sending to Ask or Automatic in the Messages Bridge menu."
                 ]
             }
             guard let text = request.text,

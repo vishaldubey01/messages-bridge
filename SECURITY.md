@@ -11,7 +11,7 @@ Messages Bridge deliberately keeps broad macOS permissions out of AI harnesses:
 - The bridge exposes fixed operations rather than arbitrary SQL, filesystem paths, shell commands, or AppleScript.
 - Sending is controlled by an app-level policy and is treated as non-idempotent.
 
-Any process running as the same macOS user can attempt to connect to the socket. Treat local code execution in the user account as trusted to the same extent as other desktop applications. Keep Sending set to **Off** or **Confirm Each Send** if that is not acceptable.
+Any process running as the same macOS user can attempt to connect to the socket. Treat local code execution in the user account as trusted to the same extent as other desktop applications. Keep Sending set to **Off** or **Ask Before Sending** if that is not acceptable.
 
 ## Reporting a vulnerability
 

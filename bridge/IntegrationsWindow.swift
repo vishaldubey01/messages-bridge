@@ -20,7 +20,7 @@ enum HarnessKind: Int, CaseIterable, Hashable {
     }
 }
 
-private enum HarnessConnectionState {
+enum HarnessConnectionState {
     case missingHarness
     case available
     case needsUpdate
@@ -28,7 +28,7 @@ private enum HarnessConnectionState {
     case error
 }
 
-private struct HarnessStatus {
+struct HarnessStatus {
     let state: HarnessConnectionState
     let detail: String
 }
@@ -38,7 +38,7 @@ private struct ProcessResult {
     let output: String
 }
 
-private final class HarnessIntegrationManager {
+final class HarnessIntegrationManager {
     let helperURL: URL
 
     init() {
@@ -195,7 +195,7 @@ private struct IntegrationRow {
     let actionButton: NSButton
 }
 
-final class IntegrationsWindowController: NSWindowController {
+private final class LegacyIntegrationsWindowController: NSWindowController {
     private let manager = HarnessIntegrationManager()
     private var rows: [HarnessKind: IntegrationRow] = [:]
     private var connectAllButton: NSButton!

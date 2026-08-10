@@ -23,4 +23,4 @@ Messages Bridge does not create a second message database or retain message cont
 
 ## Sending
 
-The Sending policy defaults to **Off**. **Confirm Each Send** presents a native confirmation for every send. **Allow Sends Automatically** must be explicitly enabled and can be turned off from the menu at any time.
+The Sending mode defaults to **Off**. **Ask Before Sending** presents a native confirmation for every send. **Send Automatically** must be explicitly enabled and can be turned off from the menu at any time.

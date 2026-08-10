@@ -26,7 +26,7 @@ MESSAGES_BRIDGE_BUNDLE_ID="com.example.MessagesBridge" \
 Example notarization flow after the ZIP is created:
 
 ```bash
-xcrun notarytool submit dist/Messages-Bridge-0.2.0.zip \
+xcrun notarytool submit dist/Messages-Bridge-0.3.0.zip \
   --keychain-profile messages-bridge-notary \
   --wait
 
