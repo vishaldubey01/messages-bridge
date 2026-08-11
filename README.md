@@ -4,6 +4,8 @@ Messages Bridge is a small, native macOS menu-bar app that gives local MCP clien
 
 It supports:
 
+- Enumerating recent direct and group conversations with unread counts
+- Reading unread messages across the inbox without marking them read
 - Reading direct conversations and group chats
 - Resolving participants through Contacts
 - Reading attachments that belong to the selected conversation, embedding originals up to 20 MB and locally previewing larger supported files

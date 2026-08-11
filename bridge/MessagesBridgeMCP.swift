@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 private let serverName = "messages-bridge"
-private let serverVersion = "0.3.3"
+private let serverVersion = "0.3.4"
 private let maximumBridgeResponseBytes = 32 * 1024 * 1024
 
 private func objectSchema(
@@ -75,6 +75,31 @@ private let tools: [[String: Any]] = [
         title: "Check Messages Bridge",
         description: "Check whether the local Messages Bridge app is running and can open the Messages database read-only, including Contacts access, sending policy, and Messages Automation access. Does not read message content or send anything.",
         schema: objectSchema(),
+        readOnly: true,
+        idempotent: true,
+        openWorld: false
+    ),
+    tool(
+        name: "messages_list_conversations",
+        title: "List recent Messages conversations",
+        description: "Enumerate recent one-to-one and group conversations without reading message bodies. Returns resolved names, participants, last activity, service, and the unread count within the requested time range.",
+        schema: objectSchema(properties: [
+            "since_days": integerProperty("List conversations active within this many days and count unread messages within the same range.", minimum: 1, maximum: 3650, default: 30),
+            "limit": integerProperty("Maximum number of conversations returned.", minimum: 1, maximum: 200, default: 100),
+        ]),
+        readOnly: true,
+        idempotent: true,
+        openWorld: false
+    ),
+    tool(
+        name: "messages_list_unread",
+        title: "List unread Messages",
+        description: "Read unread incoming messages across one-to-one and group conversations, newest first, without marking them read. Returns conversation labels, senders, message text, attachment metadata, and nextCursor when older unread messages remain.",
+        schema: objectSchema(properties: [
+            "since_days": integerProperty("Return unread messages received within this many days.", minimum: 1, maximum: 3650, default: 7),
+            "limit": integerProperty("Page size. Up to 500 unread messages are returned per call; use nextCursor to continue.", minimum: 1, maximum: 500, default: 100),
+            "cursor": stringProperty("Opaque nextCursor returned by the previous page. Omit for the newest unread messages.", maximum: 128),
+        ]),
         readOnly: true,
         idempotent: true,
         openWorld: false
@@ -385,6 +410,20 @@ private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
     switch name {
     case "messages_bridge_status":
         return toolResult(bridgeCall(["operation": "status"]))
+    case "messages_list_conversations":
+        return toolResult(bridgeCall([
+            "operation": "list_conversations",
+            "sinceDays": integer(arguments, "since_days", default: 30),
+            "limit": integer(arguments, "limit", default: 100),
+        ]))
+    case "messages_list_unread":
+        var request: [String: Any] = [
+            "operation": "list_unread",
+            "sinceDays": integer(arguments, "since_days", default: 7),
+            "limit": integer(arguments, "limit", default: 100),
+        ]
+        if let cursor = trimmedString(arguments, "cursor") { request["cursor"] = cursor }
+        return toolResult(bridgeCall(request))
     case "messages_read_thread":
         guard let name = trimmedString(arguments, "name") else {
             return toolResult(bridgeError("invalid_name", "A contact name is required."))
@@ -472,7 +511,7 @@ private func response(for request: [String: Any]) -> [String: Any]? {
             "protocolVersion": protocolVersion,
             "capabilities": ["tools": ["listChanged": false]],
             "serverInfo": ["name": serverName, "version": serverVersion],
-            "instructions": "Use the six bounded read tools and two controlled text-send tools. Reads use SQLite read-only mode. Sends are non-idempotent and obey the Messages Bridge menu policy; never retry an uncertain send.",
+            "instructions": "Use the eight bounded read tools and two controlled text-send tools. For broad inbox or unread requests, enumerate conversations or call the unread inbox tool instead of guessing from recent activity. Reads use SQLite read-only mode. Sends are non-idempotent and obey the Messages Bridge menu policy; never retry an uncertain send.",
         ]
     case "ping":
         result = [:]

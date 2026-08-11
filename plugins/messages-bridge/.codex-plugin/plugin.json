@@ -1,6 +1,6 @@
 {
   "name": "messages-bridge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Teach Codex to use the separately installed Messages Bridge app and its bounded local MCP tools.",
   "author": {
     "name": "Vishal Dubey"
@@ -14,6 +14,7 @@
     "category": "Productivity",
     "capabilities": [
       "Read Apple Messages conversations",
+      "List recent conversations and unread messages",
       "List and read Apple Messages group chats",
       "Read bounded message attachments",
       "Send policy-controlled direct and group text messages"

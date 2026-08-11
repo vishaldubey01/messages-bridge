@@ -319,6 +319,116 @@ private final class MessagesStore {
         ]
     }
 
+    func listConversations(sinceDays: Int, limit: Int) throws -> [String: Any] {
+        var database: OpaquePointer?
+        let openCode = sqlite3_open_v2(databasePath, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil)
+        guard openCode == SQLITE_OK, let database else {
+            if database != nil { sqlite3_close(database) }
+            throw BridgeFailure.message(
+                "Messages Bridge cannot open chat.db. Grant Full Disk Access to Messages Bridge, then relaunch it.",
+                code: "full_disk_access_required"
+            )
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 2_000)
+        sqlite3_exec(database, "PRAGMA query_only=ON", nil, nil, nil)
+        sqlite3_exec(database, "PRAGMA temp_store=MEMORY", nil, nil, nil)
+
+        let contactNames = try contactNamesByHandle()
+        let conversations = try MessagesInboxQueries.recentConversations(
+            database: database,
+            sinceDays: sinceDays,
+            limit: limit
+        )
+        let handles = try handlesForChats(database: database, chatIDs: conversations.map(\.chatID))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payloads: [[String: Any]] = conversations.compactMap { conversation in
+            guard var payload = conversationMetadata(
+                chatGUID: conversation.chatGUID,
+                storedName: conversation.storedName,
+                participantHandles: handles[conversation.chatID] ?? [],
+                contactNames: contactNames
+            ) else { return nil }
+            payload["lastActivity"] = formatter.string(from: dateFromMessagesValue(conversation.lastActivity))
+            payload["unreadCount"] = conversation.unreadCount
+            payload["service"] = conversation.service
+            return payload
+        }
+        return [
+            "ok": true,
+            "sinceDays": sinceDays,
+            "limit": limit,
+            "count": payloads.count,
+            "unreadCountsScope": "within-since-days",
+            "conversations": payloads,
+            "mode": "sqlite-read-only",
+        ]
+    }
+
+    func listUnread(sinceDays: Int, limit: Int, cursor: MessageCursor?) throws -> [String: Any] {
+        var database: OpaquePointer?
+        let openCode = sqlite3_open_v2(databasePath, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil)
+        guard openCode == SQLITE_OK, let database else {
+            if database != nil { sqlite3_close(database) }
+            throw BridgeFailure.message(
+                "Messages Bridge cannot open chat.db. Grant Full Disk Access to Messages Bridge, then relaunch it.",
+                code: "full_disk_access_required"
+            )
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 2_000)
+        sqlite3_exec(database, "PRAGMA query_only=ON", nil, nil, nil)
+        sqlite3_exec(database, "PRAGMA temp_store=MEMORY", nil, nil, nil)
+
+        let contactNames = try contactNamesByHandle()
+        let page = try MessagesInboxQueries.unreadMessages(
+            database: database,
+            sinceDays: sinceDays,
+            limit: limit,
+            cursorRawDate: cursor?.rawDate,
+            cursorMessageID: cursor?.messageID
+        )
+        let handles = try handlesForChats(database: database, chatIDs: Array(Set(page.rows.map(\.chatID))))
+        let attachments = try attachmentMetadata(database: database, messageIDs: page.rows.map(\.messageID))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payloads: [[String: Any]] = page.rows.compactMap { row in
+            guard var payload = conversationMetadata(
+                chatGUID: row.chatGUID,
+                storedName: row.storedName,
+                participantHandles: handles[row.chatID] ?? [],
+                contactNames: contactNames
+            ) else { return nil }
+            let resolvedSender = contactNames[normalizedHandleKey(row.senderHandle)]
+                ?? (row.senderHandle.isEmpty ? "Unknown participant" : row.senderHandle)
+            payload["timestamp"] = formatter.string(from: dateFromMessagesValue(row.rawDate))
+            payload["sender"] = resolvedSender
+            payload["direction"] = "incoming"
+            payload["text"] = decodedMessageText(plainText: row.plainText, attributedBody: row.attributedBody)
+            payload["service"] = row.service
+            payload["unread"] = true
+            payload["attachments"] = (attachments[row.messageID] ?? []).map(\.payload)
+            return payload
+        }
+        let nextCursor = page.hasMore
+            ? page.rows.last.map { MessageCursor(rawDate: $0.rawDate, messageID: $0.messageID).encoded }
+            : nil
+        return [
+            "ok": true,
+            "sinceDays": sinceDays,
+            "limit": limit,
+            "count": payloads.count,
+            "hasMore": page.hasMore,
+            "nextCursor": nextCursor ?? NSNull(),
+            "sortOrder": "newest-first",
+            "marksMessagesRead": false,
+            "attachmentsIncluded": true,
+            "messages": payloads,
+            "mode": "sqlite-read-only",
+        ]
+    }
+
     func listGroups(sinceDays: Int, limit: Int) throws -> [String: Any] {
         var database: OpaquePointer?
         let openCode = sqlite3_open_v2(databasePath, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil)
@@ -928,6 +1038,35 @@ private final class MessagesStore {
         if !trimmed.isEmpty { return trimmed }
         let visible = participants.prefix(4).joined(separator: ", ")
         return visible.isEmpty ? "Unnamed group" : visible
+    }
+
+    private func conversationMetadata(
+        chatGUID: String,
+        storedName: String,
+        participantHandles: [String],
+        contactNames: [String: String]
+    ) -> [String: Any]? {
+        guard !participantHandles.isEmpty else { return nil }
+        let participants = participantHandles.map { contactNames[normalizedHandleKey($0)] ?? $0 }
+        if participantHandles.count > 1 {
+            guard !chatGUID.isEmpty else { return nil }
+            return [
+                "conversationType": "group",
+                "groupID": chatGUID,
+                "name": groupDisplayName(storedName: storedName, participants: participants),
+                "participants": participants,
+                "participantCount": participants.count,
+            ]
+        }
+        let handle = participantHandles[0]
+        let displayName = contactNames[normalizedHandleKey(handle)] ?? handle
+        return [
+            "conversationType": "direct",
+            "name": displayName,
+            "contact": displayName,
+            "participants": [displayName],
+            "participantCount": 1,
+        ]
     }
 
     private func matchingHandleIDs(database: OpaquePointer, contact: ContactIdentity) throws -> [Int64] {
@@ -1656,6 +1795,33 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             result["sendingTransport"] = "apple-events"
             result["automationAuthorization"] = sender.authorizationLabel()
             return result
+        case "list_conversations":
+            guard readsEnabled else {
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
+            }
+            let days = min(max(request.sinceDays ?? 30, 1), 3650)
+            let limit = min(max(request.limit ?? 100, 1), 200)
+            do {
+                return try store.listConversations(sinceDays: days, limit: limit)
+            } catch let failure as BridgeFailure {
+                return failure.payload
+            } catch {
+                return ["ok": false, "error": "conversation_list_failed", "message": error.localizedDescription]
+            }
+        case "list_unread":
+            guard readsEnabled else {
+                return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
+            }
+            let days = min(max(request.sinceDays ?? 7, 1), 3650)
+            let limit = min(max(request.limit ?? 100, 1), 500)
+            do {
+                let cursor = try decodedMessageCursor(request.cursor)
+                return try store.listUnread(sinceDays: days, limit: limit, cursor: cursor)
+            } catch let failure as BridgeFailure {
+                return failure.payload
+            } catch {
+                return ["ok": false, "error": "unread_list_failed", "message": error.localizedDescription]
+            }
         case "read_thread":
             guard readsEnabled else {
                 return ["ok": false, "error": "reads_disabled", "message": "Set Reading to On in the Messages Bridge menu."]
