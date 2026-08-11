@@ -532,6 +532,14 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         refreshButton.bezelStyle = .inline
         refreshButton.toolTip = "Check connections again"
 
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+        let versionLabel = NSTextField(labelWithString: "Version \(shortVersion)")
+        versionLabel.font = .systemFont(ofSize: 11.5, weight: .regular)
+        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.toolTip = "Messages Bridge \(shortVersion), build \(buildVersion)"
+        versionLabel.setAccessibilityLabel("Messages Bridge version \(shortVersion), build \(buildVersion)")
+
         connectAllButton = NSButton(title: "Connect available", target: self, action: #selector(connectAll))
         connectAllButton.bezelStyle = .rounded
         connectAllButton.controlSize = .large
@@ -541,7 +549,7 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let footer = NSStackView(views: [copyButton, refreshButton, spacer, connectAllButton])
+        let footer = NSStackView(views: [copyButton, refreshButton, versionLabel, spacer, connectAllButton])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 8
