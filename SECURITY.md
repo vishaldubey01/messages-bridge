@@ -15,6 +15,6 @@ Any process running as the same macOS user can attempt to connect to the socket.
 
 ## Reporting a vulnerability
 
-Once the repository is public, use GitHub's private vulnerability reporting feature under the repository's **Security** tab. Do not include sensitive message content, phone numbers, email addresses, or attachments in a public issue.
+Use GitHub's private vulnerability reporting feature under the repository's **Security** tab. Do not include sensitive message content, phone numbers, email addresses, or attachments in a public issue.
 
 For non-sensitive bugs, open a normal GitHub issue with the macOS version, Messages Bridge version, and redacted reproduction steps.
