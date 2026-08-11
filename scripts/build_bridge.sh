@@ -11,6 +11,7 @@ entitlements_file="$plugin_root/bridge/MessagesBridge.entitlements"
 icon_source="$plugin_root/bridge/assets/AppIcon-1024.png"
 integration_assets="$plugin_root/bridge/assets/integrations"
 install_root="${MESSAGES_BRIDGE_INSTALL_ROOT:-$HOME/Applications}"
+minimum_macos_version="${MESSAGES_BRIDGE_MINIMUM_MACOS_VERSION:-13.0}"
 app_path="$install_root/Messages Bridge.app"
 contents_path="$app_path/Contents"
 signing_identity="${MESSAGES_BRIDGE_SIGNING_IDENTITY:--}"
@@ -21,7 +22,8 @@ rm -rf "$contents_path/Resources/Integrations"
 mkdir -p "$contents_path/Resources/Integrations"
 cp "$integration_assets"/*.png "$contents_path/Resources/Integrations/"
 icon_work_dir="$(mktemp -d)"
-trap 'rm -rf "$icon_work_dir"' EXIT
+binary_work_dir="$(mktemp -d)"
+trap 'rm -rf "$icon_work_dir" "$binary_work_dir"' EXIT
 iconset_path="$icon_work_dir/AppIcon.iconset"
 mkdir -p "$iconset_path"
 sips --resampleHeightWidth 16 16 "$icon_source" --out "$iconset_path/icon_16x16.png" >/dev/null
@@ -35,21 +37,33 @@ sips --resampleHeightWidth 512 512 "$icon_source" --out "$iconset_path/icon_256x
 sips --resampleHeightWidth 512 512 "$icon_source" --out "$iconset_path/icon_512x512.png" >/dev/null
 sips --resampleHeightWidth 1024 1024 "$icon_source" --out "$iconset_path/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$iconset_path" -o "$contents_path/Resources/AppIcon.icns"
-swiftc \
-  -swift-version 5 \
-  -O \
-  -framework AppKit \
-  -framework Contacts \
-  -framework CoreServices \
-  -framework ScriptingBridge \
-  -lsqlite3 \
-  "$source_file" "$integrations_file" "$integrations_presentation_file" \
-  -o "$contents_path/MacOS/MessagesBridge"
-swiftc \
-  -swift-version 5 \
-  -O \
-  "$mcp_source_file" \
-  -o "$contents_path/MacOS/MessagesBridgeMCP"
+for architecture in arm64 x86_64; do
+  swiftc \
+    -swift-version 5 \
+    -O \
+    -target "$architecture-apple-macosx$minimum_macos_version" \
+    -framework AppKit \
+    -framework Contacts \
+    -framework CoreServices \
+    -framework ScriptingBridge \
+    -lsqlite3 \
+    "$source_file" "$integrations_file" "$integrations_presentation_file" \
+    -o "$binary_work_dir/MessagesBridge-$architecture"
+  swiftc \
+    -swift-version 5 \
+    -O \
+    -target "$architecture-apple-macosx$minimum_macos_version" \
+    "$mcp_source_file" \
+    -o "$binary_work_dir/MessagesBridgeMCP-$architecture"
+done
+lipo -create \
+  "$binary_work_dir/MessagesBridge-arm64" \
+  "$binary_work_dir/MessagesBridge-x86_64" \
+  -output "$contents_path/MacOS/MessagesBridge"
+lipo -create \
+  "$binary_work_dir/MessagesBridgeMCP-arm64" \
+  "$binary_work_dir/MessagesBridgeMCP-x86_64" \
+  -output "$contents_path/MacOS/MessagesBridgeMCP"
 cp "$plist_file" "$contents_path/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_identifier" "$contents_path/Info.plist"
 if [[ "$signing_identity" != "-" ]] && ! security find-identity -v -p codesigning | rg -F "$signing_identity" >/dev/null; then

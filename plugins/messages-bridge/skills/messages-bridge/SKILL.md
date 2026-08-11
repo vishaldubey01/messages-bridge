@@ -7,11 +7,11 @@ description: Read direct and group Apple Messages or iMessage conversations and 
 
 Use only the Messages Bridge MCP tools. Never query `~/Library/Messages`, invoke `sqlite3`, open attachment paths directly, or operate the Messages UI as a fallback.
 
-If the Messages Bridge tools are unavailable, ask the user to open **Messages Bridge > Integrations…** and connect Codex. Do not attempt to install or imitate the bridge from the agent session.
+If the Messages Bridge tools are unavailable, ask the user to open **Messages Bridge > Setup…** and connect Codex. Do not attempt to install or imitate the bridge from the agent session.
 
 1. Call `messages_bridge_status` when setup or availability is uncertain.
-2. For a direct chat, call `messages_read_thread` with the exact contact `name` and the narrowest reasonable `since_days` and `limit`.
-3. For a group chat, call `messages_list_groups` with a narrow `since_days` and `limit`, select the exact group by its returned name or participants, then call `messages_read_group` with its opaque `group_id`.
+2. For a direct chat, call `messages_read_thread` with the exact contact `name` and the narrowest reasonable `since_days` and `limit`. If the response has `hasMore: true` and more history is needed, call it again with the returned `nextCursor`. Continue page by page; the page-size limit is not a conversation-history cap.
+3. For a group chat, call `messages_list_groups` with a narrow `since_days` and `limit`, select the exact group by its returned name or participants, then call `messages_read_group` with its opaque `group_id`. Follow `nextCursor` while `hasMore` is true when the user needs older history.
 4. For direct-chat attachments, call `messages_read_attachment` with the same contact `name` and an `attachment_id` returned by `messages_read_thread`.
 5. For group attachments, call `messages_read_group_attachment` with the selected `group_id` and an `attachment_id` returned by `messages_read_group`.
 6. Send a direct text only when the user clearly requests the send and the intended text is established. Call `messages_send_text` with the exact Contacts `name` and exact `text`.

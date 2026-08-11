@@ -6,15 +6,16 @@ Messages Bridge should be distributed as a signed and notarized native macOS app
 
 1. Choose a permanent reverse-DNS bundle identifier.
 2. Build with a **Developer ID Application** signing identity.
-3. Sign with the hardened runtime and a secure timestamp.
-4. Verify the bundle and nested MCP helper signatures.
-5. Submit the app to Apple's notarization service and staple its ticket.
-6. Package the stapled app in a signed DMG with an Applications shortcut.
-7. Notarize and staple the DMG.
-8. Publish the checksum and release notes on GitHub Releases.
-9. Test installation on a Mac that has never run Messages Bridge.
-10. Test Full Disk Access, Contacts, Automation, Codex setup, and Claude Code setup.
-11. Keep public sending defaulted to **Off**.
+3. Build both app executables as universal `arm64` + `x86_64` binaries whose Mach-O deployment target matches `LSMinimumSystemVersion`.
+4. Sign with the hardened runtime and a secure timestamp.
+5. Verify the bundle and nested MCP helper signatures.
+6. Submit the app to Apple's notarization service and staple its ticket.
+7. Package the stapled app in a signed DMG with an Applications shortcut.
+8. Notarize and staple the DMG.
+9. Publish the checksum and release notes on GitHub Releases.
+10. Test installation on a Mac that has never run Messages Bridge.
+11. Test Full Disk Access, Contacts, Automation, Codex setup, and Claude Code setup.
+12. Keep public sending defaulted to **Off**.
 
 Example build:
 

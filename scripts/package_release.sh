@@ -27,6 +27,19 @@ MESSAGES_BRIDGE_INSTALL_ROOT="$release_work_directory" \
   "$repository_root/scripts/build_bridge.sh" >/dev/null
 
 app_path="$release_work_directory/Messages Bridge.app"
+minimum_macos_version="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_path/Contents/Info.plist")"
+for binary in \
+  "$app_path/Contents/MacOS/MessagesBridge" \
+  "$app_path/Contents/MacOS/MessagesBridgeMCP"; do
+  lipo "$binary" -verify_arch arm64 x86_64
+  for architecture in arm64 x86_64; do
+    binary_minimum="$(vtool -arch "$architecture" -show-build "$binary" | awk '/minos/{print $2; exit}')"
+    if [[ "$binary_minimum" != "$minimum_macos_version" ]]; then
+      echo "$(basename "$binary") $architecture targets macOS $binary_minimum, expected $minimum_macos_version." >&2
+      exit 1
+    fi
+  done
+done
 submission_path="$release_work_directory/Messages-Bridge-$version-notarization.zip"
 ditto -c -k --sequesterRsrc --keepParent \
   "$app_path" \

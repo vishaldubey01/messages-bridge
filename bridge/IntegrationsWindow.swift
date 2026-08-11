@@ -135,12 +135,23 @@ final class HarnessIntegrationManager {
 
     private func executableURL(named name: String) -> URL? {
         var candidates: [URL] = []
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if name == "codex" {
+            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+                candidates.append(appURL.appendingPathComponent("Contents/Resources/codex"))
+            }
+            candidates.append(contentsOf: [
+                URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex"),
+                URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"),
+                home.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex"),
+                home.appendingPathComponent("Applications/ChatGPT.app/Contents/Resources/codex"),
+            ])
+        }
         if let path = ProcessInfo.processInfo.environment["PATH"] {
             candidates.append(contentsOf: path.split(separator: ":").map {
                 URL(fileURLWithPath: String($0)).appendingPathComponent(name)
             })
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
         candidates.append(contentsOf: [
             home.appendingPathComponent(".local/bin/\(name)"),
             home.appendingPathComponent(".npm-global/bin/\(name)"),
@@ -160,6 +171,8 @@ final class HarnessIntegrationManager {
         let pipe = Pipe()
         process.executableURL = executable
         process.arguments = arguments
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        process.environment = childEnvironment(executable: executable)
         process.standardOutput = pipe
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
@@ -171,6 +184,30 @@ final class HarnessIntegrationManager {
         } catch {
             return ProcessResult(status: -1, output: error.localizedDescription)
         }
+    }
+
+    private func childEnvironment(executable: URL) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var paths = [
+            executable.deletingLastPathComponent().path,
+            home.appendingPathComponent(".local/bin").path,
+            home.appendingPathComponent(".npm-global/bin").path,
+            home.appendingPathComponent(".volta/bin").path,
+            home.appendingPathComponent(".asdf/shims").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ]
+        if let existing = environment["PATH"] {
+            paths.append(contentsOf: existing.split(separator: ":").map(String.init))
+        }
+        var seen = Set<String>()
+        environment["PATH"] = paths.filter { seen.insert($0).inserted }.joined(separator: ":")
+        return environment
     }
 
     private func pathsMatch(_ left: String, _ right: String) -> Bool {

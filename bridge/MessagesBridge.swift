@@ -16,6 +16,7 @@ private struct BridgeRequest: Decodable {
     let name: String?
     let sinceDays: Int?
     let limit: Int?
+    let cursor: String?
     let attachmentID: String?
     let groupID: String?
     let text: String?
@@ -29,12 +30,19 @@ private struct ContactIdentity {
 
 private struct MessageRecord {
     let messageID: Int64
+    let rawDate: Int64
     let timestamp: String
     let direction: String
     let sender: String
     let text: String
     let service: String
     let attachments: [AttachmentMetadata]
+}
+
+private struct MessagePage {
+    let records: [MessageRecord]
+    let hasMore: Bool
+    let nextCursor: String?
 }
 
 private struct AttachmentMetadata {
@@ -98,6 +106,40 @@ private enum BridgeFailure: Error {
             return ["ok": false, "error": code, "message": message]
         }
     }
+}
+
+private struct MessageCursor {
+    let rawDate: Int64
+    let messageID: Int64
+
+    init(rawDate: Int64, messageID: Int64) {
+        self.rawDate = rawDate
+        self.messageID = messageID
+    }
+
+    init?(_ encoded: String) {
+        let parts = encoded.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let rawDate = Int64(parts[0]),
+              let messageID = Int64(parts[1]),
+              rawDate >= 0,
+              messageID > 0 else { return nil }
+        self.rawDate = rawDate
+        self.messageID = messageID
+    }
+
+    var encoded: String { "\(rawDate):\(messageID)" }
+}
+
+private func decodedMessageCursor(_ rawValue: String?) throws -> MessageCursor? {
+    guard let rawValue else { return nil }
+    guard rawValue.count <= 128, let cursor = MessageCursor(rawValue) else {
+        throw BridgeFailure.message(
+            "The pagination cursor is invalid. Use nextCursor exactly as returned by the previous page.",
+            code: "invalid_cursor"
+        )
+    }
+    return cursor
 }
 
 private final class AutomationErrorCapture: NSObject, SBApplicationDelegate {
@@ -204,7 +246,29 @@ private final class MessagesStore {
         ]
     }
 
-    func readThread(name: String, sinceDays: Int, limit: Int) throws -> [String: Any] {
+    func requestContactsAccess(completion: @escaping (Bool, String?) -> Void) {
+        switch CNContactStore.authorizationStatus(for: .contacts) {
+        case .authorized:
+            completion(true, nil)
+        case .notDetermined:
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                self.contacts.requestAccess(for: .contacts) { allowed, error in
+                    DispatchQueue.main.async {
+                        completion(allowed, error?.localizedDescription)
+                    }
+                }
+            }
+        case .denied:
+            completion(false, "Contacts access is turned off in System Settings.")
+        case .restricted:
+            completion(false, "Contacts access is restricted on this Mac.")
+        @unknown default:
+            completion(false, "Contacts access is unavailable.")
+        }
+    }
+
+    func readThread(name: String, sinceDays: Int, limit: Int, cursor: MessageCursor?) throws -> [String: Any] {
         let selected = try selectedContact(name: name)
 
         var database: OpaquePointer?
@@ -222,13 +286,14 @@ private final class MessagesStore {
         sqlite3_exec(database, "PRAGMA temp_store=MEMORY", nil, nil, nil)
 
         let chatIDs = try oneToOneChatIDs(database: database, contact: selected)
-        let records = try fetchMessages(
+        let page = try fetchMessages(
             database: database,
             chatIDs: chatIDs,
             senderNames: senderNames(for: selected),
             fallbackSender: selected.displayName,
             sinceDays: sinceDays,
-            limit: limit
+            limit: limit,
+            cursor: cursor
         )
         return [
             "ok": true,
@@ -236,10 +301,12 @@ private final class MessagesStore {
             "conversationType": "direct",
             "sinceDays": sinceDays,
             "limit": limit,
-            "count": records.count,
+            "count": page.records.count,
+            "hasMore": page.hasMore,
+            "nextCursor": page.nextCursor ?? NSNull(),
             "attachmentsIncluded": true,
             "mode": "sqlite-read-only",
-            "messages": records.map {
+            "messages": page.records.map {
                 [
                     "timestamp": $0.timestamp,
                     "direction": $0.direction,
@@ -294,7 +361,7 @@ private final class MessagesStore {
         ]
     }
 
-    func readGroup(groupID: String, sinceDays: Int, limit: Int) throws -> [String: Any] {
+    func readGroup(groupID: String, sinceDays: Int, limit: Int, cursor: MessageCursor?) throws -> [String: Any] {
         var database: OpaquePointer?
         let openCode = sqlite3_open_v2(databasePath, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil)
         guard openCode == SQLITE_OK, let database else {
@@ -314,13 +381,14 @@ private final class MessagesStore {
         let participantHandles = try handlesForChats(database: database, chatIDs: [group.chatID])[group.chatID] ?? []
         let participants = participantHandles.map { contactNames[normalizedHandleKey($0)] ?? $0 }
         let groupName = groupDisplayName(storedName: group.storedName, participants: participants)
-        let records = try fetchMessages(
+        let page = try fetchMessages(
             database: database,
             chatIDs: [group.chatID],
             senderNames: senderNames(for: participantHandles, contactNames: contactNames),
             fallbackSender: nil,
             sinceDays: sinceDays,
-            limit: limit
+            limit: limit,
+            cursor: cursor
         )
         return [
             "ok": true,
@@ -330,10 +398,12 @@ private final class MessagesStore {
             "participants": participants,
             "sinceDays": sinceDays,
             "limit": limit,
-            "count": records.count,
+            "count": page.records.count,
+            "hasMore": page.hasMore,
+            "nextCursor": page.nextCursor ?? NSNull(),
             "attachmentsIncluded": true,
             "mode": "sqlite-read-only",
-            "messages": records.map {
+            "messages": page.records.map {
                 [
                     "timestamp": $0.timestamp,
                     "direction": $0.direction,
@@ -895,9 +965,13 @@ private final class MessagesStore {
         senderNames: [String: String],
         fallbackSender: String?,
         sinceDays: Int,
-        limit: Int
-    ) throws -> [MessageRecord] {
+        limit: Int,
+        cursor: MessageCursor?
+    ) throws -> MessagePage {
         let placeholders = Array(repeating: "?", count: chatIDs.count).joined(separator: ",")
+        let cursorClause = cursor == nil
+            ? ""
+            : "AND (m.date < ? OR (m.date = ? AND m.ROWID < ?))"
         let sql = """
             SELECT m.ROWID,
                    m.text,
@@ -912,7 +986,8 @@ private final class MessagesStore {
             LEFT JOIN handle AS h ON h.ROWID = m.handle_id
             WHERE cmj.chat_id IN (\(placeholders))
               AND m.date >= ?
-            ORDER BY m.date DESC
+              \(cursorClause)
+            ORDER BY m.date DESC, m.ROWID DESC
             LIMIT ?
             """
         var statement: OpaquePointer?
@@ -927,7 +1002,14 @@ private final class MessagesStore {
         }
         let threshold = Date().addingTimeInterval(-Double(sinceDays) * 86_400).timeIntervalSinceReferenceDate
         sqlite3_bind_int64(statement, bindIndex, Int64(threshold * 1_000_000_000))
-        sqlite3_bind_int(statement, bindIndex + 1, Int32(limit))
+        bindIndex += 1
+        if let cursor {
+            sqlite3_bind_int64(statement, bindIndex, cursor.rawDate)
+            sqlite3_bind_int64(statement, bindIndex + 1, cursor.rawDate)
+            sqlite3_bind_int64(statement, bindIndex + 2, cursor.messageID)
+            bindIndex += 3
+        }
+        sqlite3_bind_int(statement, bindIndex, Int32(limit + 1))
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -946,6 +1028,7 @@ private final class MessagesStore {
                 ?? (handle.isEmpty ? "Unknown participant" : handle)
             records.append(MessageRecord(
                 messageID: messageID,
+                rawDate: rawDate,
                 timestamp: formatter.string(from: dateFromMessagesValue(rawDate)),
                 direction: fromMe ? "outgoing" : "incoming",
                 sender: fromMe ? "Me" : sender,
@@ -954,10 +1037,13 @@ private final class MessagesStore {
                 attachments: []
             ))
         }
-        let attachments = try attachmentMetadata(database: database, messageIDs: records.map(\.messageID))
-        let completed = records.map { record in
+        let hasMore = records.count > limit
+        let visibleRecords = Array(records.prefix(limit))
+        let attachments = try attachmentMetadata(database: database, messageIDs: visibleRecords.map(\.messageID))
+        let completed = visibleRecords.map { record in
             MessageRecord(
                 messageID: record.messageID,
+                rawDate: record.rawDate,
                 timestamp: record.timestamp,
                 direction: record.direction,
                 sender: record.sender,
@@ -966,7 +1052,10 @@ private final class MessagesStore {
                 attachments: attachments[record.messageID] ?? []
             )
         }
-        return Array(completed.reversed())
+        let nextCursor = hasMore
+            ? completed.last.map { MessageCursor(rawDate: $0.rawDate, messageID: $0.messageID).encoded }
+            : nil
+        return MessagePage(records: Array(completed.reversed()), hasMore: hasMore, nextCursor: nextCursor)
     }
 
     private func attachmentMetadata(
@@ -1228,7 +1317,7 @@ private final class SocketServer {
 private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let readsEnabledKey = "persistentReadsEnabled"
     private let sendingPolicyKey = "sendingPolicy"
-    private let integrationsShownKey = "integrationsWindowShownV1"
+    private let integrationsShownKey = "integrationsWindowShownV2"
     private let store = MessagesStore()
     private let sender = MessagesSender()
     private var server: SocketServer?
@@ -1336,12 +1425,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         sendingMenuItem = sending
 
         menu.addItem(.separator())
-        let check = NSMenuItem(title: "Check Permissions…", action: #selector(checkPermissions), keyEquivalent: "")
-        check.target = self
-        menu.addItem(check)
-        let integrations = NSMenuItem(title: "Integrations…", action: #selector(showIntegrations), keyEquivalent: ",")
-        integrations.target = self
-        menu.addItem(integrations)
+        let setup = NSMenuItem(title: "Setup…", action: #selector(showIntegrations), keyEquivalent: ",")
+        setup.target = self
+        menu.addItem(setup)
         menu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit Messages Bridge", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -1456,9 +1542,50 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func showIntegrations() {
         if integrationsWindow == nil {
-            integrationsWindow = IntegrationsWindowController()
+            integrationsWindow = IntegrationsWindowController(
+                accessStatusProvider: { [weak self] in
+                    self?.bridgeAccessState()
+                        ?? BridgeAccessState(messagesReadable: false, contactsAuthorization: "unknown")
+                },
+                contactsAccessRequester: { [weak self] completion in
+                    guard let self else {
+                        completion(false, "Messages Bridge is unavailable.")
+                        return
+                    }
+                    self.store.requestContactsAccess(completion: completion)
+                },
+                fullDiskAccessSettingsOpener: { [weak self] in
+                    self?.openPrivacySettings(anchor: "Privacy_AllFiles")
+                },
+                contactsSettingsOpener: { [weak self] in
+                    self?.openPrivacySettings(anchor: "Privacy_Contacts")
+                }
+            )
         }
         integrationsWindow?.showAndRefresh()
+    }
+
+    private func bridgeAccessState() -> BridgeAccessState {
+        let status = store.status()
+        return BridgeAccessState(
+            messagesReadable: status["databaseReadable"] as? Bool == true,
+            contactsAuthorization: status["contactsAuthorization"] as? String ?? "unknown"
+        )
+    }
+
+    private func openPrivacySettings(anchor: String) {
+        let urls = [
+            "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
+        ]
+        for value in urls {
+            guard let url = URL(string: value) else { continue }
+            if NSWorkspace.shared.open(url) { return }
+        }
+        showAlert(
+            title: "Open Privacy & Security",
+            message: "Open System Settings > Privacy & Security and choose the requested permission."
+        )
     }
 
     @objc private func quit() {
@@ -1489,7 +1616,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             let days = min(max(request.sinceDays ?? 30, 1), 3650)
             let limit = min(max(request.limit ?? 100, 1), 500)
             do {
-                return try store.readThread(name: rawName, sinceDays: days, limit: limit)
+                let cursor = try decodedMessageCursor(request.cursor)
+                return try store.readThread(name: rawName, sinceDays: days, limit: limit, cursor: cursor)
             } catch let failure as BridgeFailure {
                 return failure.payload
             } catch {
@@ -1521,7 +1649,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             let days = min(max(request.sinceDays ?? 30, 1), 3650)
             let limit = min(max(request.limit ?? 100, 1), 500)
             do {
-                return try store.readGroup(groupID: groupID, sinceDays: days, limit: limit)
+                let cursor = try decodedMessageCursor(request.cursor)
+                return try store.readGroup(groupID: groupID, sinceDays: days, limit: limit, cursor: cursor)
             } catch let failure as BridgeFailure {
                 return failure.payload
             } catch {

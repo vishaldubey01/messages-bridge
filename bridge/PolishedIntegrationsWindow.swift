@@ -124,18 +124,49 @@ private struct IntegrationRowPresentation {
     let spinner: NSProgressIndicator
 }
 
-final class IntegrationsWindowController: NSWindowController {
+struct BridgeAccessState {
+    let messagesReadable: Bool
+    let contactsAuthorization: String
+
+    var contactsReady: Bool { contactsAuthorization == "authorized" }
+    var isReady: Bool { messagesReadable && contactsReady }
+}
+
+private struct AccessRowPresentation {
+    let detailLabel: NSTextField
+    let actionButton: NSButton
+    let stateIcon: NSImageView
+    let stateLabel: NSTextField
+}
+
+final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
     private let manager = HarnessIntegrationManager()
+    private let accessStatusProvider: () -> BridgeAccessState
+    private let contactsAccessRequester: (@escaping (Bool, String?) -> Void) -> Void
+    private let fullDiskAccessSettingsOpener: () -> Void
+    private let contactsSettingsOpener: () -> Void
     private var rows: [HarnessKind: IntegrationRowPresentation] = [:]
     private var latestStatuses: [HarnessKind: HarnessStatus] = [:]
+    private var latestAccessState = BridgeAccessState(messagesReadable: false, contactsAuthorization: "notDetermined")
+    private var messagesAccessRow: AccessRowPresentation!
+    private var contactsAccessRow: AccessRowPresentation!
     private var connectAllButton: NSButton!
     private var refreshButton: NSButton!
     private var copyButton: NSButton!
     private var operationInProgress = false
 
-    init() {
+    init(
+        accessStatusProvider: @escaping () -> BridgeAccessState,
+        contactsAccessRequester: @escaping (@escaping (Bool, String?) -> Void) -> Void,
+        fullDiskAccessSettingsOpener: @escaping () -> Void,
+        contactsSettingsOpener: @escaping () -> Void
+    ) {
+        self.accessStatusProvider = accessStatusProvider
+        self.contactsAccessRequester = contactsAccessRequester
+        self.fullDiskAccessSettingsOpener = fullDiskAccessSettingsOpener
+        self.contactsSettingsOpener = contactsSettingsOpener
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 410),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 610),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -145,18 +176,23 @@ final class IntegrationsWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 540, height: 390)
+        window.minSize = NSSize(width: 540, height: 560)
         if ProcessInfo.processInfo.environment["MESSAGES_BRIDGE_APPEARANCE"] == "dark" {
             window.appearance = NSAppearance(named: .darkAqua)
         } else if ProcessInfo.processInfo.environment["MESSAGES_BRIDGE_APPEARANCE"] == "light" {
             window.appearance = NSAppearance(named: .aqua)
         }
         super.init(window: window)
+        window.delegate = self
         buildInterface()
         centerOnActiveScreen()
     }
 
     required init?(coder: NSCoder) { nil }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        refresh()
+    }
 
     func showAndRefresh() {
         centerOnActiveScreen()
@@ -209,7 +245,7 @@ final class IntegrationsWindowController: NSWindowController {
 
         let title = NSTextField(labelWithString: "Messages Bridge")
         title.font = .systemFont(ofSize: 23, weight: .semibold)
-        let subtitle = NSTextField(wrappingLabelWithString: "Connect AI tools without giving them Full Disk Access.")
+        let subtitle = NSTextField(wrappingLabelWithString: "Set up secure local access for your AI tools.")
         subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
 
@@ -233,9 +269,12 @@ final class IntegrationsWindowController: NSWindowController {
         hero.alignment = .centerY
         hero.spacing = 14
 
-        let sectionLabel = NSTextField(labelWithString: "INTEGRATIONS")
-        sectionLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
-        sectionLabel.textColor = .tertiaryLabelColor
+        let accessLabel = NSTextField(labelWithString: "ACCESS")
+        accessLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        accessLabel.textColor = .tertiaryLabelColor
+        let integrationsLabel = NSTextField(labelWithString: "INTEGRATIONS")
+        integrationsLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        integrationsLabel.textColor = .tertiaryLabelColor
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -243,9 +282,15 @@ final class IntegrationsWindowController: NSWindowController {
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(hero)
-        stack.setCustomSpacing(25, after: hero)
-        stack.addArrangedSubview(sectionLabel)
-        stack.setCustomSpacing(8, after: sectionLabel)
+        stack.setCustomSpacing(22, after: hero)
+        stack.addArrangedSubview(accessLabel)
+        stack.setCustomSpacing(8, after: accessLabel)
+        let accessCard = makeAccessCard()
+        stack.addArrangedSubview(accessCard)
+        accessCard.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        stack.setCustomSpacing(22, after: accessCard)
+        stack.addArrangedSubview(integrationsLabel)
+        stack.setCustomSpacing(8, after: integrationsLabel)
 
         for harness in HarnessKind.allCases {
             let row = makeRow(for: harness)
@@ -265,6 +310,106 @@ final class IntegrationsWindowController: NSWindowController {
             stack.topAnchor.constraint(equalTo: background.topAnchor, constant: 58),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: background.bottomAnchor, constant: -24),
         ])
+    }
+
+    private func makeAccessCard() -> NSView {
+        let card = RoundedSurfaceView(style: .card, radius: 12)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.heightAnchor.constraint(equalToConstant: 116).isActive = true
+
+        let messages = makeAccessRow(
+            symbolName: "externaldrive.fill",
+            title: "Messages history",
+            detail: "Checking Full Disk Access…",
+            actionTitle: "Open Settings",
+            action: #selector(openFullDiskAccess)
+        )
+        messagesAccessRow = messages.presentation
+        let contacts = makeAccessRow(
+            symbolName: "person.crop.circle.fill",
+            title: "Contacts",
+            detail: "Checking name access…",
+            actionTitle: "Allow",
+            action: #selector(allowContacts)
+        )
+        contactsAccessRow = contacts.presentation
+
+        let divider = NSBox()
+        divider.boxType = .separator
+        let content = NSStackView(views: [messages.view, divider, contacts.view])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 0
+        content.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 6),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -6),
+            messages.view.widthAnchor.constraint(equalTo: content.widthAnchor),
+            contacts.view.widthAnchor.constraint(equalTo: content.widthAnchor),
+            messages.view.heightAnchor.constraint(equalToConstant: 51),
+            contacts.view.heightAnchor.constraint(equalToConstant: 51),
+            divider.widthAnchor.constraint(equalTo: content.widthAnchor),
+        ])
+        return card
+    }
+
+    private func makeAccessRow(
+        symbolName: String,
+        title: String,
+        detail: String,
+        actionTitle: String,
+        action: Selector
+    ) -> (view: NSView, presentation: AccessRowPresentation) {
+        let icon = NSImageView()
+        icon.image = symbol(symbolName, pointSize: 17, weight: .medium)
+        icon.contentTintColor = .secondaryLabelColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        let detailLabel = NSTextField(labelWithString: detail)
+        detailLabel.font = .systemFont(ofSize: 11.5)
+        detailLabel.textColor = .secondaryLabelColor
+        let labels = NSStackView(views: [titleLabel, detailLabel])
+        labels.orientation = .vertical
+        labels.alignment = .leading
+        labels.spacing = 2
+
+        let stateIcon = NSImageView()
+        stateIcon.translatesAutoresizingMaskIntoConstraints = false
+        stateIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        stateIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        let stateLabel = NSTextField(labelWithString: "Ready")
+        stateLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        let stateStack = NSStackView(views: [stateIcon, stateLabel])
+        stateStack.orientation = .horizontal
+        stateStack.alignment = .centerY
+        stateStack.spacing = 5
+        stateStack.isHidden = true
+
+        let actionButton = NSButton(title: actionTitle, target: self, action: action)
+        actionButton.bezelStyle = .rounded
+        actionButton.font = .systemFont(ofSize: 12, weight: .medium)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [icon, labels, spacer, stateStack, actionButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 11
+        return (
+            row,
+            AccessRowPresentation(
+                detailLabel: detailLabel,
+                actionButton: actionButton,
+                stateIcon: stateIcon,
+                stateLabel: stateLabel
+            )
+        )
     }
 
     private func makeRow(for harness: HarnessKind) -> NSView {
@@ -393,16 +538,76 @@ final class IntegrationsWindowController: NSWindowController {
     private func refresh() {
         guard !operationInProgress else { return }
         setBusy(true)
+        let accessStatusProvider = self.accessStatusProvider
         DispatchQueue.global(qos: .userInitiated).async { [manager] in
             var statuses: [HarnessKind: HarnessStatus] = [:]
             for harness in HarnessKind.allCases { statuses[harness] = manager.status(for: harness) }
+            let accessState = accessStatusProvider()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.latestStatuses = statuses
+                self.latestAccessState = accessState
                 self.setBusy(false)
+                self.apply(accessState)
                 self.apply(statuses)
             }
         }
+    }
+
+    private func apply(_ accessState: BridgeAccessState) {
+        applyAccessRow(
+            messagesAccessRow,
+            ready: accessState.messagesReadable,
+            readyDetail: "Read-only access is ready.",
+            missingDetail: "Required to read your Messages history.",
+            actionTitle: "Open Settings"
+        )
+
+        if accessState.contactsReady {
+            applyAccessRow(
+                contactsAccessRow,
+                ready: true,
+                readyDetail: "Names and group participants can be resolved.",
+                missingDetail: "",
+                actionTitle: "Allow"
+            )
+        } else {
+            contactsAccessRow.stateIcon.isHidden = true
+            contactsAccessRow.stateLabel.isHidden = true
+            contactsAccessRow.actionButton.isHidden = false
+            switch accessState.contactsAuthorization {
+            case "notDetermined":
+                contactsAccessRow.detailLabel.stringValue = "Allow once so names resolve correctly."
+                contactsAccessRow.actionButton.title = "Allow"
+            case "denied":
+                contactsAccessRow.detailLabel.stringValue = "Turn Contacts on in System Settings."
+                contactsAccessRow.actionButton.title = "Open Settings"
+            case "restricted":
+                contactsAccessRow.detailLabel.stringValue = "Contacts access is restricted on this Mac."
+                contactsAccessRow.actionButton.isHidden = true
+            default:
+                contactsAccessRow.detailLabel.stringValue = "Contacts access needs attention."
+                contactsAccessRow.actionButton.title = "Open Settings"
+            }
+        }
+    }
+
+    private func applyAccessRow(
+        _ row: AccessRowPresentation,
+        ready: Bool,
+        readyDetail: String,
+        missingDetail: String,
+        actionTitle: String
+    ) {
+        row.detailLabel.stringValue = ready ? readyDetail : missingDetail
+        row.actionButton.title = actionTitle
+        row.actionButton.isHidden = ready
+        row.stateIcon.isHidden = !ready
+        row.stateLabel.isHidden = !ready
+        row.stateIcon.image = symbol("checkmark.circle.fill", pointSize: 14, weight: .medium)
+        row.stateIcon.contentTintColor = .systemGreen
+        row.stateLabel.stringValue = "Ready"
+        row.stateLabel.textColor = .systemGreen
     }
 
     private func apply(_ statuses: [HarnessKind: HarnessStatus]) {
@@ -430,8 +635,10 @@ final class IntegrationsWindowController: NSWindowController {
                 showAction(row, title: "Retry")
             }
         }
-        connectAllButton.isHidden = connectableCount == 0
-        connectAllButton.isEnabled = connectableCount > 0
+        let accessNeedsWork = !latestAccessState.isReady
+        connectAllButton.title = accessNeedsWork ? "Finish setup" : "Connect available"
+        connectAllButton.isHidden = connectableCount == 0 && !accessNeedsWork
+        connectAllButton.isEnabled = connectableCount > 0 || accessNeedsWork
     }
 
     private func showState(_ row: IntegrationRowPresentation, symbol name: String, color: NSColor, text: String) {
@@ -462,11 +669,71 @@ final class IntegrationsWindowController: NSWindowController {
             guard let state = latestStatuses[$0]?.state else { return false }
             return state == .available || state == .needsUpdate
         }
-        connect(targets)
+        finishSetup(connecting: targets)
     }
 
-    private func connect(_ targets: [HarnessKind]) {
-        guard !targets.isEmpty, !operationInProgress else { return }
+    @objc private func allowContacts() {
+        guard !operationInProgress else { return }
+        if latestAccessState.contactsAuthorization == "notDetermined" {
+            setBusy(true)
+            contactsAccessRequester { [weak self] granted, error in
+                guard let self else { return }
+                self.setBusy(false)
+                if !granted, let error { self.showPermissionError(error) }
+                self.refresh()
+            }
+        } else {
+            contactsSettingsOpener()
+        }
+    }
+
+    @objc private func openFullDiskAccess() {
+        showFullDiskAccessGuide()
+    }
+
+    private func finishSetup(connecting targets: [HarnessKind]) {
+        guard !operationInProgress else { return }
+        requestContactsForSetupIfNeeded { [weak self] in
+            guard let self else { return }
+            self.connect(targets) { [weak self] in
+                guard let self else { return }
+                if !self.latestAccessState.messagesReadable {
+                    self.showFullDiskAccessGuide()
+                }
+            }
+        }
+    }
+
+    private func requestContactsForSetupIfNeeded(completion: @escaping () -> Void) {
+        guard !latestAccessState.contactsReady else {
+            completion()
+            return
+        }
+        if latestAccessState.contactsAuthorization != "notDetermined" {
+            contactsSettingsOpener()
+            completion()
+            return
+        }
+        setBusy(true)
+        contactsAccessRequester { [weak self] granted, error in
+            guard let self else { return }
+            self.setBusy(false)
+            guard granted else {
+                self.showPermissionError(error ?? "Contacts access was not granted.")
+                self.refresh()
+                return
+            }
+            completion()
+        }
+    }
+
+    private func connect(_ targets: [HarnessKind], completion: (() -> Void)? = nil) {
+        guard !operationInProgress else { return }
+        guard !targets.isEmpty else {
+            completion?()
+            refresh()
+            return
+        }
         setBusy(true)
         DispatchQueue.global(qos: .userInitiated).async { [manager] in
             var failures: [String] = []
@@ -484,6 +751,7 @@ final class IntegrationsWindowController: NSWindowController {
                     self.showError(failures.joined(separator: "\n\n"))
                     self.refresh()
                 }
+                completion?()
             }
         }
     }
@@ -492,6 +760,8 @@ final class IntegrationsWindowController: NSWindowController {
         operationInProgress = busy
         refreshButton?.isEnabled = !busy
         connectAllButton?.isEnabled = !busy
+        messagesAccessRow?.actionButton.isEnabled = !busy
+        contactsAccessRow?.actionButton.isEnabled = !busy
         for row in rows.values {
             if busy {
                 row.actionButton.isHidden = true
@@ -524,5 +794,30 @@ final class IntegrationsWindowController: NSWindowController {
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         if let window { alert.beginSheetModal(for: window) }
+    }
+
+    private func showPermissionError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Contacts access was not enabled"
+        alert.informativeText = message
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Not Now")
+        guard let window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn { self?.contactsSettingsOpener() }
+        }
+    }
+
+    private func showFullDiskAccessGuide() {
+        let alert = NSAlert()
+        alert.messageText = "Allow access to your Messages history"
+        alert.informativeText = "macOS does not show a normal permission prompt for Messages history. In Full Disk Access, add or enable Messages Bridge, then return here and click refresh. You may need to reopen the app once."
+        alert.addButton(withTitle: "Open Full Disk Access")
+        alert.addButton(withTitle: "Not Now")
+        guard let window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn { self?.fullDiskAccessSettingsOpener() }
+        }
     }
 }

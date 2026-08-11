@@ -15,7 +15,7 @@ Messages Bridge cannot edit or delete messages, execute arbitrary SQL, or read a
 
 ## Requirements
 
-- macOS 13 or newer
+- macOS 13 or newer, on Apple silicon or Intel
 - Messages configured on the Mac
 - An MCP-capable local client such as Codex or Claude Code
 
@@ -34,15 +34,11 @@ cd messages-bridge
 open "$HOME/Applications/Messages Bridge.app"
 ```
 
-On first launch:
+On first launch, the Setup window shows Messages history, Contacts, Codex, and Claude Code in one place. Click **Finish setup** to request Contacts access, connect every detected client, and open the correct Full Disk Access page when needed. macOS requires you to enable **Messages Bridge** manually in that page; return to the app and click refresh afterward.
 
-1. Grant **Messages Bridge** Full Disk Access.
-2. Grant Contacts access when requested.
-3. Open **Messages Bridge > Integrations…**.
-4. Connect Codex, Claude Code, or copy the generic MCP configuration.
-5. Choose a Sending mode from the menu: **Off**, **Ask Before Sending**, or **Send Automatically**.
+Choose a Sending mode from the menu when you want to send: **Off**, **Ask Before Sending**, or **Send Automatically**.
 
-The bundled `MessagesBridgeMCP` executable starts the app in the background when necessary. A harness never needs Full Disk Access itself.
+The bundled `MessagesBridgeMCP` executable starts the app in the background when necessary. A harness never needs Full Disk Access itself. Both bundled executables are universal binaries with a macOS 13 deployment target.
 
 ## Architecture
 
@@ -59,7 +55,7 @@ Messages Bridge.app
    └── Messages Apple Events for policy-controlled sends
 ```
 
-The Codex plugin in this repository is optional. It contributes usage instructions; the app's **Integrations…** window manages the actual user-level MCP connection.
+The Codex plugin in this repository is optional. It contributes usage instructions; the app's **Setup…** window manages the actual user-level MCP connection.
 
 To install the optional Codex plugin from this repository:
 

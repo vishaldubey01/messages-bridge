@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 private let serverName = "messages-bridge"
-private let serverVersion = "0.3.0"
+private let serverVersion = "0.3.1"
 private let maximumBridgeResponseBytes = 32 * 1024 * 1024
 
 private func objectSchema(
@@ -82,12 +82,13 @@ private let tools: [[String: Any]] = [
     tool(
         name: "messages_read_thread",
         title: "Read a Messages thread",
-        description: "Read one named Apple Messages conversation from the local database. Returns message text and attachment metadata. This tool does not send, edit, or delete.",
+        description: "Read one page of a named Apple Messages conversation from the local database. Returns message text, attachment metadata, and nextCursor when older messages remain. Pass that cursor back to continue through the entire conversation. This tool does not send, edit, or delete.",
         schema: objectSchema(
             properties: [
                 "name": stringProperty("Exact or unambiguous Contacts name, for example Riley Brown.", maximum: 200),
                 "since_days": integerProperty("Read no earlier than this many days ago.", minimum: 1, maximum: 3650, default: 30),
-                "limit": integerProperty("Maximum number of messages returned.", minimum: 1, maximum: 500, default: 100),
+                "limit": integerProperty("Page size. Up to 500 messages are returned per call; use nextCursor to continue without a conversation-history cap.", minimum: 1, maximum: 500, default: 100),
+                "cursor": stringProperty("Opaque nextCursor returned by the previous page. Omit for the newest page.", maximum: 128),
             ],
             required: ["name"]
         ),
@@ -110,12 +111,13 @@ private let tools: [[String: Any]] = [
     tool(
         name: "messages_read_group",
         title: "Read a Messages group",
-        description: "Read one group conversation selected by an opaque ID from messages_list_groups. Returns sender labels, message text, and attachment metadata. This tool does not send, edit, or delete.",
+        description: "Read one page of a group conversation selected by an opaque ID from messages_list_groups. Returns sender labels, message text, attachment metadata, and nextCursor when older messages remain. Pass that cursor back to continue through the entire conversation. This tool does not send, edit, or delete.",
         schema: objectSchema(
             properties: [
                 "group_id": stringProperty("Opaque group ID returned by messages_list_groups.", maximum: 512),
                 "since_days": integerProperty("Read no earlier than this many days ago.", minimum: 1, maximum: 3650, default: 30),
-                "limit": integerProperty("Maximum number of messages returned.", minimum: 1, maximum: 500, default: 100),
+                "limit": integerProperty("Page size. Up to 500 messages are returned per call; use nextCursor to continue without a conversation-history cap.", minimum: 1, maximum: 500, default: 100),
+                "cursor": stringProperty("Opaque nextCursor returned by the previous page. Omit for the newest page.", maximum: 128),
             ],
             required: ["group_id"]
         ),
@@ -377,12 +379,14 @@ private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
         guard let name = trimmedString(arguments, "name") else {
             return toolResult(bridgeError("invalid_name", "A contact name is required."))
         }
-        return toolResult(bridgeCall([
+        var request: [String: Any] = [
             "operation": "read_thread",
             "name": name,
             "sinceDays": integer(arguments, "since_days", default: 30),
             "limit": integer(arguments, "limit", default: 100),
-        ]))
+        ]
+        if let cursor = trimmedString(arguments, "cursor") { request["cursor"] = cursor }
+        return toolResult(bridgeCall(request))
     case "messages_list_groups":
         return toolResult(bridgeCall([
             "operation": "list_groups",
@@ -393,12 +397,14 @@ private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
         guard let groupID = trimmedString(arguments, "group_id") else {
             return toolResult(bridgeError("invalid_group_id", "A group ID is required."))
         }
-        return toolResult(bridgeCall([
+        var request: [String: Any] = [
             "operation": "read_group",
             "groupID": groupID,
             "sinceDays": integer(arguments, "since_days", default: 30),
             "limit": integer(arguments, "limit", default: 100),
-        ]))
+        ]
+        if let cursor = trimmedString(arguments, "cursor") { request["cursor"] = cursor }
+        return toolResult(bridgeCall(request))
     case "messages_read_attachment":
         guard let name = trimmedString(arguments, "name") else {
             return toolResult(bridgeError("invalid_name", "A contact name is required."))
