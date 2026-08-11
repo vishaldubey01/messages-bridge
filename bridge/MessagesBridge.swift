@@ -554,11 +554,40 @@ private final class MessagesStore {
             throw BridgeFailure.message("The attachment is not a regular file.", code: "attachment_unavailable")
         }
         let fileSize = values.fileSize ?? Int(record.byteCount)
-        guard fileSize >= 0, fileSize <= maxAttachmentBytes else {
-            throw BridgeFailure.message(
-                "The attachment is larger than the 20 MB read limit.",
-                code: "attachment_too_large"
-            )
+        guard fileSize >= 0 else {
+            throw BridgeFailure.message("The attachment size is invalid.", code: "attachment_unavailable")
+        }
+        let displayName = record.transferName.isEmpty ? fileURL.lastPathComponent : record.transferName
+        if fileSize > maxAttachmentBytes {
+            guard let preview = AttachmentTranscoder.previewOnly(
+                fileURL: fileURL,
+                filename: displayName,
+                mimeType: record.mimeType,
+                originalByteCount: fileSize
+            ) else {
+                throw BridgeFailure.message(
+                    "The attachment is larger than the 20 MB embedded-file limit and macOS could not create a preview.",
+                    code: "attachment_too_large"
+                )
+            }
+            var result: [String: Any] = [
+                "ok": true,
+                "attachmentID": attachmentID,
+                "name": preview.name,
+                "mimeType": preview.mimeType,
+                "byteCount": preview.originalByteCount,
+                "inlineRenderable": false,
+                "dataIncluded": false,
+                "originalIncluded": false,
+                "previewAvailable": true,
+                "previewMimeType": "image/jpeg",
+                "previewByteCount": preview.previewData.count,
+                "previewDataBase64": preview.previewData.base64EncodedString(),
+                "mode": "file-preview-only",
+                "message": "The original file exceeds the 20 MB embedded-file limit; a local preview is included instead.",
+            ]
+            for (key, value) in context { result[key] = value }
+            return result
         }
         let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
         guard data.count <= maxAttachmentBytes else {
@@ -567,16 +596,41 @@ private final class MessagesStore {
                 code: "attachment_too_large"
             )
         }
-        let displayName = record.transferName.isEmpty ? fileURL.lastPathComponent : record.transferName
+        let prepared = AttachmentTranscoder.prepare(
+            data: data,
+            fileURL: fileURL,
+            filename: displayName,
+            mimeType: record.mimeType,
+            maximumBytes: maxAttachmentBytes
+        )
         var result: [String: Any] = [
             "ok": true,
             "attachmentID": attachmentID,
-            "name": displayName,
-            "mimeType": record.mimeType.isEmpty ? "application/octet-stream" : record.mimeType,
-            "byteCount": data.count,
-            "dataBase64": data.base64EncodedString(),
+            "name": prepared.name,
+            "mimeType": prepared.mimeType,
+            "byteCount": prepared.data.count,
+            "inlineRenderable": prepared.inlineRenderable,
+            "dataIncluded": true,
+            "originalIncluded": !prepared.wasTranscoded,
+            "dataBase64": prepared.data.base64EncodedString(),
             "mode": "file-read-only",
         ]
+        if prepared.wasTranscoded {
+            result["transcoded"] = true
+            result["originalName"] = displayName
+            if let originalMimeType = prepared.originalMimeType {
+                result["originalMimeType"] = originalMimeType
+            }
+            result["originalByteCount"] = prepared.originalByteCount
+        }
+        if let previewData = prepared.previewData {
+            result["previewAvailable"] = true
+            result["previewMimeType"] = "image/jpeg"
+            result["previewByteCount"] = previewData.count
+            result["previewDataBase64"] = previewData.base64EncodedString()
+        } else {
+            result["previewAvailable"] = false
+        }
         for (key, value) in context {
             result[key] = value
         }

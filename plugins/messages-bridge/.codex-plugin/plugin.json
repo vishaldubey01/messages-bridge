@@ -1,6 +1,6 @@
 {
   "name": "messages-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Teach Codex to use the separately installed Messages Bridge app and its bounded local MCP tools.",
   "author": {
     "name": "Vishal Dubey"

@@ -6,12 +6,14 @@ It supports:
 
 - Reading direct conversations and group chats
 - Resolving participants through Contacts
-- Reading attachments that belong to the selected conversation, up to 20 MB
+- Reading attachments that belong to the selected conversation, embedding originals up to 20 MB and locally previewing larger supported files
 - Sending direct and group text messages under an app-controlled policy
 - One-click user-scope setup for Codex and Claude Code
 - Standard local STDIO MCP configuration for other clients
 
 Messages Bridge cannot edit or delete messages, execute arbitrary SQL, or read arbitrary files.
+
+HEIC, HEIF, TIFF, and other macOS-decodable image formats are converted locally to JPEG when the MCP client cannot render them directly. PDFs, videos, and other files up to 20 MB keep their original bytes and include a JPEG preview when macOS Quick Look supports the format. Larger previewable attachments still return metadata and a preview without embedding the original file. MCP does not define an inline video player, so videos are delivered as the original resource plus a preview frame when size permits.
 
 ## Requirements
 

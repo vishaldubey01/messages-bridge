@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 private let serverName = "messages-bridge"
-private let serverVersion = "0.3.1"
+private let serverVersion = "0.3.2"
 private let maximumBridgeResponseBytes = 32 * 1024 * 1024
 
 private func objectSchema(
@@ -128,7 +128,7 @@ private let tools: [[String: Any]] = [
     tool(
         name: "messages_read_attachment",
         title: "Read a Messages attachment",
-        description: "Read one attachment after verifying it belongs to the named one-to-one conversation. Maximum size is 20 MB. Cannot access arbitrary paths.",
+        description: "Read one attachment after verifying it belongs to the named one-to-one conversation. Compatible images and audio are returned inline; HEIC/HEIF and other unsupported images are converted locally to JPEG. PDFs, videos, and other files up to 20 MB retain their original bytes and include a JPEG preview when macOS can render one. Larger previewable files return metadata and a JPEG preview without embedding the original bytes. Cannot access arbitrary paths.",
         schema: objectSchema(
             properties: [
                 "name": stringProperty("The same Contacts name used to read the thread.", maximum: 200),
@@ -143,7 +143,7 @@ private let tools: [[String: Any]] = [
     tool(
         name: "messages_read_group_attachment",
         title: "Read a Messages group attachment",
-        description: "Read one attachment after verifying it belongs to the selected group conversation. Maximum size is 20 MB. Cannot access arbitrary paths.",
+        description: "Read one attachment after verifying it belongs to the selected group conversation. Compatible images and audio are returned inline; HEIC/HEIF and other unsupported images are converted locally to JPEG. PDFs, videos, and other files up to 20 MB retain their original bytes and include a JPEG preview when macOS can render one. Larger previewable files return metadata and a JPEG preview without embedding the original bytes. Cannot access arbitrary paths.",
         schema: objectSchema(
             properties: [
                 "group_id": stringProperty("Opaque group ID returned by messages_list_groups.", maximum: 512),
@@ -331,32 +331,42 @@ private func toolResult(_ result: [String: Any]) -> [String: Any] {
 
 private func attachmentToolResult(_ result: [String: Any]) -> [String: Any] {
     guard result["ok"] as? Bool == true else { return toolResult(result) }
-    guard let base64 = result["dataBase64"] as? String, !base64.isEmpty else {
+    let base64 = (result["dataBase64"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    let previewBase64 = (result["previewDataBase64"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    guard base64 != nil || previewBase64 != nil else {
         return toolResult(bridgeError("invalid_attachment_response", "Attachment data was missing."))
     }
     var metadata = result
     metadata.removeValue(forKey: "dataBase64")
+    metadata.removeValue(forKey: "previewDataBase64")
     let mimeType = (metadata["mimeType"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "application/octet-stream"
     metadata["mimeType"] = mimeType
+    let inlineRenderable = metadata["inlineRenderable"] as? Bool
+        ?? (mimeType.hasPrefix("image/") || mimeType.hasPrefix("audio/"))
     let encoded = (try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])) ?? Data()
     let text = String(data: encoded, encoding: .utf8) ?? "{}"
     var content: [[String: Any]] = [["type": "text", "text": text]]
-    if mimeType.hasPrefix("image/") {
+    if inlineRenderable, mimeType.hasPrefix("image/"), let base64 {
         content.append(["type": "image", "data": base64, "mimeType": mimeType])
-    } else if mimeType.hasPrefix("audio/") {
+    } else if inlineRenderable, mimeType.hasPrefix("audio/"), let base64 {
         content.append(["type": "audio", "data": base64, "mimeType": mimeType])
     } else {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        let attachmentID = String(describing: metadata["attachmentID"] ?? "attachment").addingPercentEncoding(withAllowedCharacters: allowed) ?? "attachment"
-        let filename = String(describing: metadata["name"] ?? "attachment").addingPercentEncoding(withAllowedCharacters: allowed) ?? "attachment"
-        content.append([
-            "type": "resource",
-            "resource": [
-                "uri": "messages-bridge://attachment/\(attachmentID)/\(filename)",
-                "mimeType": mimeType,
-                "blob": base64,
-            ],
-        ])
+        if let previewBase64 {
+            content.append(["type": "image", "data": previewBase64, "mimeType": "image/jpeg"])
+        }
+        if let base64 {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+            let attachmentID = String(describing: metadata["attachmentID"] ?? "attachment").addingPercentEncoding(withAllowedCharacters: allowed) ?? "attachment"
+            let filename = String(describing: metadata["name"] ?? "attachment").addingPercentEncoding(withAllowedCharacters: allowed) ?? "attachment"
+            content.append([
+                "type": "resource",
+                "resource": [
+                    "uri": "messages-bridge://attachment/\(attachmentID)/\(filename)",
+                    "mimeType": mimeType,
+                    "blob": base64,
+                ],
+            ])
+        }
     }
     return ["content": content, "structuredContent": metadata, "isError": false]
 }
