@@ -110,7 +110,7 @@ private let tools: [[String: Any]] = [
         description: "Read one page of a named Apple Messages conversation from the local database. Returns message text, attachment metadata, and nextCursor when older messages remain. Pass that cursor back to continue through the entire conversation. This tool does not send, edit, or delete.",
         schema: objectSchema(
             properties: [
-                "name": stringProperty("Exact or unambiguous Contacts name, for example Riley Brown.", maximum: 200),
+                "name": stringProperty("Exact or unambiguous Contacts name, for example Jordan Lee.", maximum: 200),
                 "since_days": integerProperty("Read no earlier than this many days ago.", minimum: 1, maximum: 3650, default: 30),
                 "limit": integerProperty("Page size. Up to 500 messages are returned per call; use nextCursor to continue without a conversation-history cap.", minimum: 1, maximum: 500, default: 100),
                 "cursor": stringProperty("Opaque nextCursor returned by the previous page. Omit for the newest page.", maximum: 128),

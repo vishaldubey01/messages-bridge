@@ -1,113 +1,110 @@
-# Messages Bridge
+<p align="center">
+  <img src="bridge/assets/AppIcon-1024.png" width="96" alt="Messages Bridge app icon">
+</p>
 
-Messages Bridge is a small, native macOS menu-bar app that gives local MCP clients bounded access to Apple Messages. The app—not the AI harness—holds Full Disk Access, Contacts access, and permission to automate Messages.
+<h1 align="center">Messages Bridge</h1>
 
-It supports:
+<p align="center"><strong>Make Apple Messages programmable from Codex, Claude Code, and any local MCP client.</strong></p>
 
-- Enumerating recent direct and group conversations with unread counts
-- Reading unread messages across the inbox without marking them read
-- Reading direct conversations and group chats
-- Resolving participants through Contacts
-- Reading attachments that belong to the selected conversation, embedding originals up to 20 MB and locally previewing larger supported files
-- Sending direct and group text messages under an app-controlled policy
-- One-click user-scope setup for Codex and Claude Code
-- Standard local STDIO MCP configuration for other clients
+<p align="center">
+  <a href="https://github.com/vishaldubey01/messages-bridge/releases/latest">Download for macOS</a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#how-it-works">How it works</a>
+  ·
+  <a href="#privacy-and-security">Privacy</a>
+</p>
 
-Messages Bridge cannot edit or delete messages, execute arbitrary SQL, or read arbitrary files.
+Messages Bridge turns the Messages app on your Mac into a focused set of tools for AI agents. Your agent can find unread texts, catch you up on a group chat, understand attachments, and send replies through the same skills and automations you already use.
 
-HEIC, HEIF, TIFF, and other macOS-decodable image formats are converted locally to JPEG when the MCP client cannot render them directly. PDFs, videos, and other files up to 20 MB keep their original bytes and include a JPEG preview when macOS Quick Look supports the format. Larger previewable attachments still return metadata and a preview without embedding the original file. MCP does not define an inline video player, so videos are delivered as the original resource plus a preview frame when size permits.
+Try prompts like:
 
-## Requirements
+> Show me every unread text from the past seven days, grouped by conversation. Tell me which ones look like they need a reply.
 
-- macOS 13 or newer, on Apple silicon or Intel
-- Messages configured on the Mac
-- An MCP-capable local client such as Codex or Claude Code
+> Catch me up on the project group chat. Include decisions, open questions, and anything assigned to me.
 
-## Install and connect
+> Read the latest attachment from Jordan, explain what it is, and draft a reply. Do not send it yet.
+
+> Send “Running five minutes late, sorry!” to Jordan.
+
+## Quick start
+
+Messages Bridge requires macOS 13 or newer, Apple silicon or Intel, and Messages configured on the Mac.
 
 1. Download the latest `Messages-Bridge-*.dmg` from [GitHub Releases](https://github.com/vishaldubey01/messages-bridge/releases/latest).
 2. Open the DMG and drag **Messages Bridge** to **Applications**.
-3. Open **Messages Bridge** from Applications.
+3. Open the app and click **Finish setup**.
+4. Allow Contacts access, connect the detected AI clients, and enable Messages Bridge in the Full Disk Access page that opens. macOS requires that last toggle to be enabled manually.
+5. Return to Messages Bridge and click refresh. Start a new Codex or Claude Code session and ask it to use Messages Bridge.
 
-To build the app from source instead:
+Reading is on by default. Sending is off until you choose a policy from the menu bar:
 
-```bash
-git clone https://github.com/vishaldubey01/messages-bridge.git
-cd messages-bridge
-./scripts/build_bridge.sh
-open "$HOME/Applications/Messages Bridge.app"
-```
+| Sending mode | Behavior |
+| --- | --- |
+| **Off** | No connected client can send a message. |
+| **Ask Before Sending** | Messages Bridge shows a native confirmation for every send. |
+| **Send Automatically** | Clear send requests run without another Messages Bridge confirmation. |
 
-On first launch, the Setup window shows Messages history, Contacts, Codex, and Claude Code in one place. Click **Finish setup** to request Contacts access, connect every detected client, and open the correct Full Disk Access page when needed. macOS requires you to enable **Messages Bridge** manually in that page; return to the app and click refresh afterward.
+The first send also triggers macOS's one-time Automation permission for the Messages app.
 
-Choose a Sending mode from the menu when you want to send: **Off**, **Ask Before Sending**, or **Send Automatically**.
+## What it can do
 
-The bundled `MessagesBridgeMCP` executable starts the app in the background when necessary. A harness never needs Full Disk Access itself. Both bundled executables are universal binaries with a macOS 13 deployment target.
+| Capability | What your agent gets |
+| --- | --- |
+| Unread inbox | Unread direct and group messages across a time range, without marking them read |
+| Conversations | Recent one-to-one and group chats with resolved names, participants, activity, and unread counts |
+| Direct and group history | Paginated message text, senders, timestamps, and attachment metadata |
+| Attachments | Inline images and audio, local JPEG conversion for HEIC/HEIF/TIFF, plus originals and Quick Look previews for PDFs, videos, and other files |
+| Sending | Policy-controlled text messages to an exact contact or selected group |
+| Integrations | One-click user-level setup for Codex and Claude Code, plus standard STDIO MCP configuration for other clients |
 
-## Architecture
+The 500-message limit is a page size, not a conversation-history cap. When more history exists, the bridge returns a `nextCursor` so the client can continue page by page.
+
+Messages Bridge currently sends text only. It does not send attachments, edit or delete messages, run arbitrary SQL, or expose arbitrary file paths.
+
+## Why a bridge?
+
+Codex and Claude Code do not expose Apple Messages as a native data source. Without Messages Bridge, a local agent would need broad filesystem access plus custom code for Apple's private database schema, Contacts resolution, attachment conversion, and Messages automation.
+
+Messages Bridge packages that work into stable, named MCP tools. The native app owns the macOS permissions and sending policy. The AI client only invokes the specific operations the bridge exposes.
+
+## How it works
 
 ```text
-Codex / Claude / MCP client
-            │ STDIO MCP
-            ▼
-MessagesBridgeMCP (bundled, no Python dependency)
-            │ same-user Unix socket
-            ▼
+Codex / Claude Code / MCP client
+               │
+               │ STDIO MCP
+               ▼
+MessagesBridgeMCP
+               │
+               │ same-user Unix socket
+               ▼
 Messages Bridge.app
-   ├── chat.db opened read-only
-   ├── Contacts name resolution
-   └── Messages Apple Events for policy-controlled sends
+   ├── reads chat.db in read-only mode
+   ├── resolves names through Contacts
+   ├── converts and previews attachments locally
+   └── sends approved text through Messages
 ```
 
-The Codex plugin in this repository is optional. It contributes usage instructions; the app's **Setup…** window manages the actual user-level MCP connection.
+The helper is bundled with the app and has no Python or Node.js dependency. It starts Messages Bridge in the background when needed.
 
-To install the optional Codex plugin from this repository:
+### Available MCP tools
 
-```bash
-codex plugin marketplace add vishaldubey01/messages-bridge
-codex plugin add messages-bridge@messages-bridge
-```
+- `messages_bridge_status`
+- `messages_list_conversations`
+- `messages_list_unread`
+- `messages_read_thread`
+- `messages_list_groups`
+- `messages_read_group`
+- `messages_read_attachment`
+- `messages_read_group_attachment`
+- `messages_send_text`
+- `messages_send_group_text`
 
-Install and connect the native app first. Claude Code does not need a plugin; connect it directly from the app.
+## Other MCP clients
 
-## Build options
-
-The development build defaults to ad-hoc signing and installs in `$HOME/Applications`:
-
-```bash
-./scripts/build_bridge.sh
-```
-
-The monochrome app icon is generated from the same native two-bubble symbol used in the menu bar:
-
-```bash
-swift scripts/generate_app_icon.swift bridge/assets/AppIcon-1024.png
-```
-
-To preserve a stable app identity across builds, provide a signing identity and bundle identifier:
-
-```bash
-MESSAGES_BRIDGE_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
-MESSAGES_BRIDGE_BUNDLE_ID="com.example.MessagesBridge" \
-./scripts/build_bridge.sh
-```
-
-Changing the signing identity or bundle identifier can cause macOS to request privacy permissions again.
-
-To create a signed, notarized, and stapled DMG:
-
-```bash
-MESSAGES_BRIDGE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-MESSAGES_BRIDGE_BUNDLE_ID="com.example.MessagesBridge" \
-MESSAGES_BRIDGE_NOTARY_PROFILE="messages-bridge-notary" \
-./scripts/package_release.sh
-```
-
-The release script verifies the app with Gatekeeper, creates a DMG with an Applications shortcut, notarizes the DMG, staples its ticket, and emits a SHA-256 checksum. See [Distribution](docs/DISTRIBUTION.md).
-
-## Generic MCP configuration
-
-Other MCP clients can launch the helper directly:
+Messages Bridge can copy a configuration using its current app location. The equivalent configuration for an app installed in `/Applications` is:
 
 ```json
 {
@@ -120,13 +117,47 @@ Other MCP clients can launch the helper directly:
 }
 ```
 
-If the app is installed in `~/Applications`, use that path instead. The app can copy the correct configuration for its current location.
+If you installed the app in `~/Applications`, use that path instead.
 
-## Security and privacy
+## Codex plugin
 
-Messages Bridge has no networking or telemetry. Data passes from the app to the local MCP client over a Unix socket restricted to the signed-in user. Your chosen AI client may transmit tool results to its model provider, so its privacy terms still apply.
+The app can connect Codex directly. This optional plugin adds instructions that help Codex choose the right Messages Bridge tools and handle paginated history safely:
 
-See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for the complete boundary and reporting guidance.
+```bash
+codex plugin marketplace add vishaldubey01/messages-bridge
+codex plugin add messages-bridge@messages-bridge
+```
+
+Install and connect the native app first. Claude Code does not need a plugin.
+
+## Attachment behavior
+
+HEIC, HEIF, TIFF, and other macOS-decodable image formats are converted locally to JPEG when the MCP client cannot render them. PDFs, videos, and other files up to 20 MB keep their original bytes and include a JPEG preview when macOS Quick Look supports the format.
+
+For larger previewable files, the bridge returns metadata and a local preview without embedding the original. MCP does not define an inline video player, so videos are delivered as the original resource plus a preview frame when size permits.
+
+## Privacy and security
+
+Messages Bridge itself has no networking, analytics, or telemetry. It opens the Messages database read-only, limits attachment access to the selected conversation, and communicates with the MCP helper over a Unix socket restricted to the signed-in user.
+
+Your connected AI client may transmit requested tool results to its model provider. Its privacy terms and data controls still apply.
+
+Read [Privacy](PRIVACY.md) for the data boundary and [Security](SECURITY.md) for the threat model and vulnerability reporting process.
+
+## Build from source
+
+The development build is ad-hoc signed and installs to `$HOME/Applications`:
+
+```bash
+git clone https://github.com/vishaldubey01/messages-bridge.git
+cd messages-bridge
+./scripts/build_bridge.sh
+open "$HOME/Applications/Messages Bridge.app"
+```
+
+Changing the signing identity or bundle identifier can make macOS request privacy permissions again. For Developer ID signing and notarization, see [Distribution](docs/DISTRIBUTION.md).
+
+Contributions are welcome. Read [Contributing](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 

@@ -9,14 +9,26 @@ swiftc -swift-version 5 -O \
   -framework AppKit \
   -framework Contacts \
   -framework CoreServices \
+  -framework ImageIO \
+  -framework QuickLookThumbnailing \
   -framework ScriptingBridge \
   -lsqlite3 \
-  bridge/MessagesBridge.swift bridge/IntegrationsWindow.swift bridge/PolishedIntegrationsWindow.swift \
+  bridge/MessagesBridge.swift \
+  bridge/AttachmentTranscoder.swift \
+  bridge/MessagesInboxQueries.swift \
+  bridge/IntegrationsWindow.swift \
+  bridge/PolishedIntegrationsWindow.swift \
   -o /tmp/MessagesBridge
 
 swiftc -swift-version 5 -O \
   bridge/MessagesBridgeMCP.swift \
   -o /tmp/MessagesBridgeMCP
+
+swiftc -swift-version 5 -O -lsqlite3 \
+  bridge/MessagesInboxQueries.swift tests/MessagesInboxQueriesTests.swift \
+  -o /tmp/MessagesInboxQueriesTests
+
+/tmp/MessagesInboxQueriesTests
 ```
 
 Never include real message databases, attachments, contact identifiers, signing certificates, or notarization credentials in commits or test fixtures.
