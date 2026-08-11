@@ -185,12 +185,27 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         buildInterface()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification,
+            object: NSApp
+        )
         centerOnActiveScreen()
     }
 
     required init?(coder: NSCoder) { nil }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
+        refresh()
+    }
+
+    @objc private func applicationDidBecomeActive(_ notification: Notification) {
+        guard window?.isVisible == true else { return }
         refresh()
     }
 
@@ -558,18 +573,20 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         applyAccessRow(
             messagesAccessRow,
             ready: accessState.messagesReadable,
-            readyDetail: "Read-only access is ready.",
-            missingDetail: "Required to read your Messages history.",
-            actionTitle: "Open Settings"
+            readyDetail: "Full Disk Access is enabled.",
+            missingDetail: "Full Disk Access is required to read Messages.",
+            actionTitle: "Open Settings",
+            readyLabel: "Enabled"
         )
 
         if accessState.contactsReady {
             applyAccessRow(
                 contactsAccessRow,
                 ready: true,
-                readyDetail: "Names and group participants can be resolved.",
+                readyDetail: "Contacts access is allowed.",
                 missingDetail: "",
-                actionTitle: "Allow"
+                actionTitle: "Allow",
+                readyLabel: "Allowed"
             )
         } else {
             contactsAccessRow.stateIcon.isHidden = true
@@ -597,7 +614,8 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         ready: Bool,
         readyDetail: String,
         missingDetail: String,
-        actionTitle: String
+        actionTitle: String,
+        readyLabel: String
     ) {
         row.detailLabel.stringValue = ready ? readyDetail : missingDetail
         row.actionButton.title = actionTitle
@@ -606,7 +624,7 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         row.stateLabel.isHidden = !ready
         row.stateIcon.image = symbol("checkmark.circle.fill", pointSize: 14, weight: .medium)
         row.stateIcon.contentTintColor = .systemGreen
-        row.stateLabel.stringValue = "Ready"
+        row.stateLabel.stringValue = readyLabel
         row.stateLabel.textColor = .systemGreen
     }
 
