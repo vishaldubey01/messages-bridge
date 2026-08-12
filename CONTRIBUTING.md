@@ -16,6 +16,7 @@ swiftc -swift-version 5 -O \
   bridge/MessagesBridge.swift \
   bridge/AttachmentTranscoder.swift \
   bridge/MessagesInboxQueries.swift \
+  bridge/CursorMCPConfiguration.swift \
   bridge/IntegrationsWindow.swift \
   bridge/PolishedIntegrationsWindow.swift \
   -o /tmp/MessagesBridge
@@ -29,6 +30,12 @@ swiftc -swift-version 5 -O -lsqlite3 \
   -o /tmp/MessagesInboxQueriesTests
 
 /tmp/MessagesInboxQueriesTests
+
+swiftc -swift-version 5 -O \
+  bridge/CursorMCPConfiguration.swift tests/CursorMCPConfigurationTests.swift \
+  -o /tmp/CursorMCPConfigurationTests
+
+/tmp/CursorMCPConfigurationTests
 ```
 
 Never include real message databases, attachments, contact identifiers, signing certificates, or notarization credentials in commits or test fixtures.

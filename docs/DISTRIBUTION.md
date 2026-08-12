@@ -14,7 +14,7 @@ Messages Bridge should be distributed as a signed and notarized native macOS app
 8. Notarize and staple the DMG.
 9. Publish the checksum and release notes on GitHub Releases.
 10. Test installation on a Mac that has never run Messages Bridge.
-11. Test Full Disk Access, Contacts, Automation, Codex setup, and Claude Code setup.
+11. Test Full Disk Access, Contacts, Automation, Codex setup, Claude Code setup, and Cursor setup without removing other entries from `~/.cursor/mcp.json`.
 12. Keep public sending defaulted to **Off**.
 
 Example build:

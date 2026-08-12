@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 private let serverName = "messages-bridge"
-private let serverVersion = "0.3.5"
+private let serverVersion = "0.3.6"
 private let maximumBridgeResponseBytes = 32 * 1024 * 1024
 
 private func objectSchema(

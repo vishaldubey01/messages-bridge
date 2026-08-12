@@ -4,11 +4,13 @@ import Foundation
 enum HarnessKind: Int, CaseIterable, Hashable {
     case codex
     case claudeCode
+    case cursor
 
     var displayName: String {
         switch self {
         case .codex: return "Codex"
         case .claudeCode: return "Claude Code"
+        case .cursor: return "Cursor"
         }
     }
 
@@ -16,6 +18,7 @@ enum HarnessKind: Int, CaseIterable, Hashable {
         switch self {
         case .codex: return "codex"
         case .claudeCode: return "claude"
+        case .cursor: return "cursor-agent"
         }
     }
 }
@@ -40,17 +43,43 @@ private struct ProcessResult {
 
 final class HarnessIntegrationManager {
     let helperURL: URL
+    private let cursorConfiguration: CursorMCPConfigurationStore
 
     init() {
         helperURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/MacOS/MessagesBridgeMCP")
             .standardizedFileURL
+        cursorConfiguration = CursorMCPConfigurationStore(
+            fileURL: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cursor/mcp.json")
+        )
     }
 
     func status(for harness: HarnessKind) -> HarnessStatus {
         guard FileManager.default.isExecutableFile(atPath: helperURL.path) else {
             return HarnessStatus(state: .error, detail: "The bundled MCP helper is missing.")
         }
+        if harness == .cursor {
+            guard cursorIsInstalled() else {
+                return HarnessStatus(state: .missingHarness, detail: "Cursor is not installed.")
+            }
+            do {
+                switch try cursorConfiguration.state(expectedCommand: helperURL.path) {
+                case .available:
+                    return HarnessStatus(state: .available, detail: "Ready to connect for this user.")
+                case .connected:
+                    return HarnessStatus(state: .connected, detail: "Connected for Cursor IDE and Agent CLI.")
+                case .needsUpdate:
+                    return HarnessStatus(state: .needsUpdate, detail: "Update the existing Cursor MCP connection.")
+                }
+            } catch {
+                return HarnessStatus(
+                    state: .needsUpdate,
+                    detail: "Could not read ~/.cursor/mcp.json: \(error.localizedDescription)"
+                )
+            }
+        }
+
         guard let executable = executableURL(named: harness.executableName) else {
             return HarnessStatus(state: .missingHarness, detail: "\(harness.displayName) is not installed.")
         }
@@ -79,15 +108,30 @@ final class HarnessIntegrationManager {
             return result.output.contains(helperURL.path)
                 ? HarnessStatus(state: .connected, detail: "Connected for every Claude Code project.")
                 : HarnessStatus(state: .needsUpdate, detail: "Update the existing user-scope connection.")
+        case .cursor:
+            return HarnessStatus(state: .error, detail: "Cursor connection status is unavailable.")
         }
     }
 
     func connect(_ harness: HarnessKind) -> Result<String, Error> {
-        guard let executable = executableURL(named: harness.executableName) else {
-            return .failure(IntegrationFailure("\(harness.displayName) is not installed or its CLI could not be found."))
-        }
         guard FileManager.default.isExecutableFile(atPath: helperURL.path) else {
             return .failure(IntegrationFailure("The bundled MCP helper is missing."))
+        }
+        if harness == .cursor {
+            guard cursorIsInstalled() else {
+                return .failure(IntegrationFailure("Cursor is not installed."))
+            }
+            do {
+                try cursorConfiguration.install(command: helperURL.path)
+                return .success("Cursor IDE and Agent CLI are connected to Messages Bridge.")
+            } catch {
+                return .failure(IntegrationFailure(
+                    "Could not update ~/.cursor/mcp.json. \(error.localizedDescription)"
+                ))
+            }
+        }
+        guard let executable = executableURL(named: harness.executableName) else {
+            return .failure(IntegrationFailure("\(harness.displayName) is not installed or its CLI could not be found."))
         }
 
         let existing: ProcessResult
@@ -102,6 +146,8 @@ final class HarnessIntegrationManager {
             existing = run(executable, arguments: ["mcp", "get", "messages-bridge"])
             removeArguments = ["mcp", "remove", "messages-bridge", "--scope", "user"]
             addArguments = ["mcp", "add", "--scope", "user", "--transport", "stdio", "messages-bridge", "--", helperURL.path]
+        case .cursor:
+            return .failure(IntegrationFailure("Cursor connection setup is unavailable."))
         }
 
         if existing.status == 0 {
@@ -164,6 +210,26 @@ final class HarnessIntegrationManager {
             seen.insert($0.standardizedFileURL.path).inserted
                 && FileManager.default.isExecutableFile(atPath: $0.path)
         }
+    }
+
+    private func cursorIsInstalled() -> Bool {
+        if NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.todesktop.230313mzl4w4u92"
+        ) != nil {
+            return true
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let appCandidates = [
+            URL(fileURLWithPath: "/Applications/Cursor.app"),
+            home.appendingPathComponent("Applications/Cursor.app"),
+        ]
+        if appCandidates.contains(where: {
+            FileManager.default.fileExists(atPath: $0.path)
+        }) {
+            return true
+        }
+        return executableURL(named: "cursor-agent") != nil
+            || executableURL(named: "cursor") != nil
     }
 
     private func run(_ executable: URL, arguments: [String]) -> ProcessResult {
