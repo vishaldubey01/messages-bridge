@@ -7,6 +7,7 @@ attachment_transcoder_file="$plugin_root/bridge/AttachmentTranscoder.swift"
 inbox_queries_file="$plugin_root/bridge/MessagesInboxQueries.swift"
 integrations_file="$plugin_root/bridge/IntegrationsWindow.swift"
 integrations_presentation_file="$plugin_root/bridge/PolishedIntegrationsWindow.swift"
+cursor_configuration_file="$plugin_root/bridge/CursorMCPConfiguration.swift"
 mcp_source_file="$plugin_root/bridge/MessagesBridgeMCP.swift"
 plist_file="$plugin_root/bridge/Info.plist"
 entitlements_file="$plugin_root/bridge/MessagesBridge.entitlements"
@@ -51,7 +52,7 @@ for architecture in arm64 x86_64; do
     -framework QuickLookThumbnailing \
     -framework ScriptingBridge \
     -lsqlite3 \
-    "$source_file" "$attachment_transcoder_file" "$inbox_queries_file" "$integrations_file" "$integrations_presentation_file" \
+    "$source_file" "$attachment_transcoder_file" "$inbox_queries_file" "$cursor_configuration_file" "$integrations_file" "$integrations_presentation_file" \
     -o "$binary_work_dir/MessagesBridge-$architecture"
   swiftc \
     -swift-version 5 \

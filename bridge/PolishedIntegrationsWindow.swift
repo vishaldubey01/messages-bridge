@@ -98,6 +98,8 @@ private final class HarnessLogoImageView: NSImageView {
             resourceName = isDark ? "CodexDark" : "CodexLight"
         case .claudeCode:
             resourceName = "ClaudeCode"
+        case .cursor:
+            resourceName = "Cursor"
         }
 
         guard let url = Bundle.main.url(
@@ -166,7 +168,7 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         self.fullDiskAccessSettingsOpener = fullDiskAccessSettingsOpener
         self.contactsSettingsOpener = contactsSettingsOpener
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 610),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 700),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -176,7 +178,7 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 540, height: 560)
+        window.minSize = NSSize(width: 540, height: 650)
         if ProcessInfo.processInfo.environment["MESSAGES_BRIDGE_APPEARANCE"] == "dark" {
             window.appearance = NSAppearance(named: .darkAqua)
         } else if ProcessInfo.processInfo.environment["MESSAGES_BRIDGE_APPEARANCE"] == "light" {
@@ -432,9 +434,12 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         card.translatesAutoresizingMaskIntoConstraints = false
         card.heightAnchor.constraint(equalToConstant: 76).isActive = true
 
-        let symbolName = harness == .codex
-            ? "chevron.left.forwardslash.chevron.right"
-            : "terminal.fill"
+        let symbolName: String
+        switch harness {
+        case .codex: symbolName = "chevron.left.forwardslash.chevron.right"
+        case .claudeCode: symbolName = "terminal.fill"
+        case .cursor: symbolName = "cube.fill"
+        }
         let harnessIcon = HarnessLogoImageView(
             harness: harness,
             fallbackImage: symbol(symbolName, pointSize: 17, weight: .medium)
@@ -446,7 +451,12 @@ final class IntegrationsWindowController: NSWindowController, NSWindowDelegate {
         // land at the same 28-point optical footprint without shifting the labels.
         let iconSlot = NSView()
         iconSlot.translatesAutoresizingMaskIntoConstraints = false
-        let sourceCanvasSize: CGFloat = harness == .codex ? 35 : 28
+        let sourceCanvasSize: CGFloat
+        switch harness {
+        case .codex: sourceCanvasSize = 35
+        case .claudeCode: sourceCanvasSize = 28
+        case .cursor: sourceCanvasSize = 30
+        }
         iconSlot.addSubview(harnessIcon)
         NSLayoutConstraint.activate([
             iconSlot.widthAnchor.constraint(equalToConstant: 28),
