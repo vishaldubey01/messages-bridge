@@ -8,6 +8,7 @@ enum CursorMCPConfigurationState: Equatable {
 
 struct CursorMCPConfigurationStore {
     let fileURL: URL
+    private let launcherPath = "/usr/bin/env"
 
     func state(expectedCommand: String) throws -> CursorMCPConfigurationState {
         let root = try loadRoot()
@@ -21,14 +22,10 @@ struct CursorMCPConfigurationStore {
             return .needsUpdate
         }
 
-        let argumentsAreEmpty: Bool
-        if let argumentsValue = entry["args"] {
-            argumentsAreEmpty = (argumentsValue as? [String])?.isEmpty == true
-        } else {
-            argumentsAreEmpty = true
-        }
-
-        return pathsMatch(command, expectedCommand) && argumentsAreEmpty
+        let arguments = entry["args"] as? [String]
+        guard let arguments = arguments, arguments.count == 1 else { return .needsUpdate }
+        return pathsMatch(command, launcherPath)
+            && pathsMatch(arguments[0], expectedCommand)
             ? .connected
             : .needsUpdate
     }
@@ -46,8 +43,8 @@ struct CursorMCPConfigurationStore {
         }
 
         servers["messages-bridge"] = [
-            "command": command,
-            "args": [],
+            "command": launcherPath,
+            "args": [command],
         ]
         root["mcpServers"] = servers
 
