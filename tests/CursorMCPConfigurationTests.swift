@@ -15,6 +15,11 @@ struct CursorMCPConfigurationTests {
         try store.install(command: helper)
         let connectedState = try store.state(expectedCommand: helper)
         precondition(connectedState == .connected)
+        let installedRoot = try readObject(fileURL)
+        let installedServers = installedRoot["mcpServers"] as! [String: Any]
+        let installedEntry = installedServers["messages-bridge"] as! [String: Any]
+        precondition(installedEntry["command"] as? String == "/usr/bin/env")
+        precondition(installedEntry["args"] as? [String] == [helper])
 
         var root = try readObject(fileURL)
         var servers = root["mcpServers"] as! [String: Any]

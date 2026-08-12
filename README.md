@@ -108,6 +108,8 @@ The app connects both Cursor IDE and Cursor Agent CLI by adding one user-level e
 
 Cursor uses the same global MCP file for the IDE and Agent CLI, so no project-by-project setup is needed. See [Cursor's MCP documentation](https://docs.cursor.com/context/model-context-protocol).
 
+Cursor still applies its own workspace trust, tool approval, and auto-run settings. Messages Bridge configures the server but does not bypass Cursor's security controls.
+
 ## Other MCP clients
 
 Messages Bridge can copy a configuration using its current app location. The equivalent configuration for an app installed in `/Applications` is:
